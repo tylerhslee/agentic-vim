@@ -1,16 +1,85 @@
-# LeeHaRin Project
+# Agentic Vim
 
-This is the shared project workspace for the LeeHaRin personal-agent system.
+A reproducible Neovim environment centered on Agentic.nvim and Codex. The
+repository captures the live editor configuration, exact plugin revisions, the
+custom Agent HUD overlay, provider versions, and the user's portable Codex
+defaults. Credentials, sessions, caches, and the personal LeeHaRin vault are
+never committed.
 
-- `LeeHaRin/` is the canonical Obsidian vault and the only subtree mirrored to
-  the Windows/Google Drive view.
-- Capability source, agent configuration, and repository metadata stay outside
-  `LeeHaRin/`.
-- Read `AGENTS.md` before working here. The mirror's controls and recovery path
-  are documented in `Windows Mirror.md`.
+## Fresh laptop setup
 
-The authoritative working copy is `/home/tylerhyun/leeharin`; do not edit the
-Windows mirror directly.
+The installer supports macOS and Linux on Apple Silicon/ARM64 and x86-64. It
+downloads verified, pinned builds of Neovim 0.12.5 and Node.js 22.22.2, installs
+the exact plugin and provider versions, compiles Tree-sitter parsers locally,
+and links this repository's `nvim/` directory as your Neovim configuration.
+
+Prerequisites are Git, curl, tar, and a C compiler. On a new Mac, install the
+Command Line Tools first:
+
+```bash
+xcode-select --install
+```
+
+Then run:
+
+```bash
+git clone https://github.com/tylerhslee/agentic-vim.git ~/agentic-vim
+cd ~/agentic-vim
+./scripts/install.sh
+./scripts/setup-credentials.sh
+exec "$SHELL" -l
+nvim
+```
+
+Because the repository is private, the initial clone requires GitHub
+authentication (for example, a GitHub credential manager or an SSH key and the
+equivalent SSH clone URL). No other project-specific secret is required.
+
+The credential wizard follows the [official Codex authentication
+flow](https://developers.openai.com/codex/auth/): either ChatGPT browser sign-in
+or an OpenAI API key. The key is passed directly to
+`codex login --with-api-key`; it is not saved in this repository or a `.env`
+file. API-key usage is billed through the OpenAI Platform account, while
+ChatGPT sign-in uses eligible subscription access.
+
+Run `./scripts/install.sh --dry-run` to preview the installation. If
+`~/.config/nvim`, the managed links under `~/.local/bin`, or the isolated plugin
+directory already conflicts, the installer stops. Re-run with `--force` to move
+each conflict into a timestamped directory under
+`~/.local/state/agentic-vim/backups/` before replacing it.
+
+The captured Codex defaults intentionally match this machine: approval policy
+`never` with `danger-full-access`. That gives Codex unrestricted local access,
+so use this setup only on a machine and in repositories you trust. To restore a
+replaced configuration, move the desired item out of the timestamped backup
+directory and back to its original path.
+
+The installer also adds `~/.local/bin` to `.zshrc` or `.bashrc` when necessary
+and installs the same JetBrainsMono Nerd Font for your user account. Select that
+font in your terminal profile to reproduce the icons and typography; terminal
+font selection cannot be controlled by Neovim.
+
+### What is pinned
+
+- Neovim 0.12.5 and Node.js 22.22.2, downloaded from their official releases
+  and SHA-256 verified.
+- JetBrainsMono Nerd Font 3.5.1, matching the current host's four Mono faces.
+- Codex CLI 0.153.4 and `@agentclientprotocol/codex-acp` 1.10.0 through
+  `provider/package-lock.json`; Tree-sitter CLI 0.27.0 from its checksum-verified
+  official release binary.
+- Every native Neovim plugin at the commit in `nvim/plugins.lock`.
+- The custom Agent HUD as `patches/agentic-hud.patch`, verified before and
+  after it is applied to the pinned Agentic.nvim base.
+
+To update an existing clone, pull changes and rerun the installer. Re-running
+the same revision is idempotent.
+
+### Platform-specific behavior
+
+The editor experience and keymaps are shared across macOS, Linux, and WSL. The
+Routine Jobs pane only exposes the LeeHaRin mirror when its systemd units exist;
+on a normal Linux or macOS laptop it opens with no configured jobs. The personal
+vault and WSL mirror services are intentionally outside this repository.
 
 ## Neovim IDE quick reference
 
@@ -74,16 +143,13 @@ Inside the Agent HUD, use `j`/`k` to select a session, `Enter` to open it,
 `l` enters the output preview; `Tab` or `h` returns to the session list.
 
 Inside Routine Jobs, use `j`/`k` to select a predefined job, `r` to run it now,
-`x` to stop its current run, `s` to enable or pause its schedule, `l` or
+`x` to stop its current run, `s` to enable or pause its automatic triggers, `l` or
 `Enter` to inspect logs, `e` to edit its definition, `R` to refresh, and `q` to
 close the pane. Run and schedule changes require confirmation. The pane reports
-schedule and execution separately, such as `SCHEDULED · IDLE` or
-`PAUSED · RUNNING`.
+watcher, reconciliation schedule, and execution separately.
 
 ### Common routines
 
-- Find the feedback note: `Space e`, `/`, type `agentic_nvim_feedback`, then
-  `Enter`.
 - Ask about a whole file: open it from Neo-tree, press `Space ac`, then
   `Space aa` and type the question.
 - Ask about a fragment: visually select it, press `Space ac`, then focus the
@@ -98,12 +164,11 @@ schedule and execution separately, such as `SCHEDULED · IDLE` or
   chat's token/context figures in its Agentic header. Type `/status` in the
   prompt for the provider's full account and session report. No separate
   AgentTally or ccusage plugin is installed.
-- Manage routines: `Space aj` opens the bottom pane. The first predefined job
-  is the existing LeeHaRin Windows mirror; future agent jobs can use the same
-  systemd-backed interface without requiring Neovim to remain open.
+- Manage routines: `Space aj` opens the bottom pane. On the original WSL host,
+  it detects the LeeHaRin mirror's systemd units. Other machines show no jobs.
 
-Neo-tree, its icon support, and its two required libraries are installed as
-native packages under `~/.local/share/nvim/site/pack/neo-tree/start/`.
+Plugins are installed in the isolated native package root
+`~/.local/share/nvim/agentic-vim/nvim-site/pack/agentic-vim/start/` by default.
 Graphical Neovim clients use a 14-point JetBrainsMono Nerd Font with two pixels
 of extra line spacing. Terminal Neovim cannot control font face, size, or line
 spacing; those settings belong to the terminal application's profile.

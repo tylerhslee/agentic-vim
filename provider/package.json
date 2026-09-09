@@ -1,0 +1,10 @@
+{
+  "name": "agentic-vim-provider",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Pinned Codex CLI and ACP adapter for the portable Neovim setup",
+  "dependencies": {
+    "@agentclientprotocol/codex-acp": "1.10.0",
+    "@openai/codex": "0.153.4"
+  }
+}

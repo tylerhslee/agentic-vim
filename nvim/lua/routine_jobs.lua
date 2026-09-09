@@ -60,39 +60,83 @@ local function selected_job()
 end
 
 local function run_status(job)
-  local service = job.service_status or {}
-  if service.error or not service.LoadState or service.LoadState == "not-found" then
-    return "UNKNOWN", "RoutineJobsFailed"
+  local statuses = { job.service_status or {} }
+  if job.reconcile_service then
+    statuses[#statuses + 1] = job.reconcile_service_status or {}
   end
-  if service.ActiveState == "activating" then
-    return "STARTING", "RoutineJobsRunning"
+
+  for _, service in ipairs(statuses) do
+    if service.error or not service.LoadState or service.LoadState == "not-found" then
+      return "UNKNOWN", "RoutineJobsFailed"
+    end
   end
-  if service.ActiveState == "deactivating" then
-    return "STOPPING", "RoutineJobsPaused"
+  for _, service in ipairs(statuses) do
+    if service.ActiveState == "failed" or service.SubState == "failed" then
+      return "FAILED", "RoutineJobsFailed"
+    end
   end
-  if service.ActiveState == "active" then
-    return "RUNNING", "RoutineJobsRunning"
+  for _, service in ipairs(statuses) do
+    if service.ActiveState == "activating" then
+      return "STARTING", "RoutineJobsRunning"
+    end
   end
-  if service.ActiveState == "failed" then
-    return "FAILED", "RoutineJobsFailed"
+  for _, service in ipairs(statuses) do
+    if service.ActiveState == "deactivating" then
+      return "STOPPING", "RoutineJobsPaused"
+    end
+  end
+  for _, service in ipairs(statuses) do
+    if service.ActiveState == "active" then
+      return "RUNNING", "RoutineJobsRunning"
+    end
   end
   return "IDLE", "RoutineJobsManual"
 end
 
+local function unit_file_enabled(status)
+  return status.UnitFileState == "enabled"
+    or status.UnitFileState == "enabled-runtime"
+end
+
+local function automatic_units(job)
+  local units = {}
+  if job.timer then
+    units[#units + 1] = job.timer_status or {}
+  end
+  if job.watcher then
+    units[#units + 1] = job.watcher_status or {}
+  end
+  return units
+end
+
 local function schedule_status(job)
-  if not job.timer then
+  local units = automatic_units(job)
+  if #units == 0 then
     return "MANUAL", "RoutineJobsManual"
   end
-  local timer = job.timer_status or {}
-  if timer.error or not timer.LoadState or timer.LoadState == "not-found" then
-    return "UNKNOWN", "RoutineJobsFailed"
+
+  local all_active = true
+  local all_enabled = true
+  local all_inactive = true
+  local all_disabled = true
+  for _, unit in ipairs(units) do
+    if unit.error or not unit.LoadState or unit.LoadState == "not-found" then
+      return "UNKNOWN", "RoutineJobsFailed"
+    end
+    if unit.ActiveState == "failed" or unit.SubState == "failed" then
+      return "FAILED", "RoutineJobsFailed"
+    end
+    local enabled = unit_file_enabled(unit)
+    all_active = all_active and unit.ActiveState == "active"
+    all_enabled = all_enabled and enabled
+    all_inactive = all_inactive and unit.ActiveState == "inactive"
+    all_disabled = all_disabled and not enabled
   end
-  local enabled = timer.UnitFileState == "enabled"
-    or timer.UnitFileState == "enabled-runtime"
-  if timer.ActiveState == "active" and enabled then
-    return "SCHEDULED", "RoutineJobsScheduled"
+
+  if all_active and all_enabled then
+    return job.watcher and "AUTOMATIC" or "SCHEDULED", "RoutineJobsScheduled"
   end
-  if timer.ActiveState ~= "active" and not enabled then
+  if all_inactive and all_disabled then
     return "PAUSED", "RoutineJobsPaused"
   end
   return "ATTENTION", "RoutineJobsFailed"
@@ -151,18 +195,20 @@ local function monotonic_next_run(value)
   return string.format("in %dh", math.ceil(remaining / 3600))
 end
 
-local function schedule_is_active(job)
-  local timer = job.timer_status or {}
-  return timer.ActiveState == "active"
-    and (timer.UnitFileState == "enabled" or timer.UnitFileState == "enabled-runtime")
-end
-
 local function schedule_can_toggle(job)
   local status = schedule_status(job)
-  if status == "UNKNOWN" or status == "ATTENTION" then
-    return false
+  return status ~= "UNKNOWN"
+end
+
+local function schedule_has_enabled_or_active_unit(job)
+  for _, unit in ipairs(automatic_units(job)) do
+    if unit_file_enabled(unit) or unit.ActiveState == "active"
+      or unit.ActiveState == "activating" or unit.ActiveState == "failed"
+    then
+      return true
+    end
   end
-  return true
+  return false
 end
 
 local function next_run(job)
@@ -187,6 +233,19 @@ local function set_modifiable(bufnr, value)
   vim.bo[bufnr].modifiable = value
 end
 
+local function unit_details(label, name, status)
+  status = status or {}
+  return string.format(
+    "   %-9s %-38s load=%s active=%s sub=%s file=%s",
+    label,
+    name,
+    status.LoadState or "?",
+    status.ActiveState or "?",
+    status.SubState or "?",
+    status.UnitFileState or "n/a"
+  )
+end
+
 local function render()
   if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
     return
@@ -194,7 +253,7 @@ local function render()
 
   local lines = {
     " Routine Jobs",
-    " r run now   x stop   s enable/pause schedule   l logs   e edit   R refresh   q close",
+    " r run now   x stop runs   s enable/pause automatic   l logs   e edit   R refresh   q close",
     "",
   }
   local highlights = {
@@ -234,6 +293,49 @@ local function render()
       start_col = 0,
       end_col = -1,
     }
+
+    lines[#lines + 1] = unit_details("service", job.service, job.service_status)
+    state.line_jobs[#lines] = job
+    highlights[#highlights + 1] = {
+      line = #lines,
+      group = "Comment",
+      start_col = 0,
+      end_col = -1,
+    }
+    if job.reconcile_service then
+      lines[#lines + 1] = unit_details(
+        "reconcile",
+        job.reconcile_service,
+        job.reconcile_service_status
+      )
+      state.line_jobs[#lines] = job
+      highlights[#highlights + 1] = {
+        line = #lines,
+        group = "Comment",
+        start_col = 0,
+        end_col = -1,
+      }
+    end
+    if job.timer then
+      lines[#lines + 1] = unit_details("timer", job.timer, job.timer_status)
+      state.line_jobs[#lines] = job
+      highlights[#highlights + 1] = {
+        line = #lines,
+        group = "Comment",
+        start_col = 0,
+        end_col = -1,
+      }
+    end
+    if job.watcher then
+      lines[#lines + 1] = unit_details("watcher", job.watcher, job.watcher_status)
+      state.line_jobs[#lines] = job
+      highlights[#highlights + 1] = {
+        line = #lines,
+        group = "Comment",
+        start_col = 0,
+        end_col = -1,
+      }
+    end
   end
 
   set_modifiable(state.bufnr, true)
@@ -253,7 +355,10 @@ local function render()
 end
 
 local function refresh_job(job, generation)
-  local remaining = job.timer and 2 or 1
+  local remaining = 1
+    + (job.reconcile_service and 1 or 0)
+    + (job.timer and 1 or 0)
+    + (job.watcher and 1 or 0)
 
   local function completed()
     remaining = remaining - 1
@@ -289,6 +394,35 @@ local function refresh_job(job, generation)
       end
       job.timer_status = parse_properties(result.stdout)
       job.timer_status.error = result.code ~= 0 and result.stderr or nil
+      completed()
+    end)
+  end
+
+  if job.reconcile_service then
+    run({
+      "systemctl", "--user", "show", job.reconcile_service, "--no-pager",
+      "--property=LoadState", "--property=ActiveState", "--property=SubState",
+    }, function(result)
+      if generation ~= state.generation then
+        return
+      end
+      job.reconcile_service_status = parse_properties(result.stdout)
+      job.reconcile_service_status.error = result.code ~= 0 and result.stderr or nil
+      completed()
+    end)
+  end
+
+  if job.watcher then
+    run({
+      "systemctl", "--user", "show", job.watcher, "--no-pager",
+      "--property=LoadState", "--property=ActiveState", "--property=SubState",
+      "--property=UnitFileState", "--property=Result",
+    }, function(result)
+      if generation ~= state.generation then
+        return
+      end
+      job.watcher_status = parse_properties(result.stdout)
+      job.watcher_status.error = result.code ~= 0 and result.stderr or nil
       completed()
     end)
   end
@@ -333,15 +467,29 @@ local function stop_job()
   if not job then
     return
   end
-  local execution = run_status(job)
-  if execution ~= "RUNNING" and execution ~= "STARTING" then
+
+  local units = {}
+  local service = job.service_status or {}
+  if service.ActiveState == "active" or service.ActiveState == "activating" then
+    units[#units + 1] = job.service
+  end
+  local reconcile = job.reconcile_service_status or {}
+  if job.reconcile_service
+    and (reconcile.ActiveState == "active" or reconcile.ActiveState == "activating")
+  then
+    units[#units + 1] = job.reconcile_service
+  end
+  if #units == 0 then
     notify(job.name .. " is not running")
     return
   end
-  confirm("Stop the current " .. job.name .. " run?", "Stop run", function()
-    run({ "systemctl", "--user", "stop", job.service }, function(result)
+
+  confirm("Stop active " .. job.name .. " runs?", "Stop runs", function()
+    local command = { "systemctl", "--user", "stop" }
+    vim.list_extend(command, units)
+    run(command, function(result)
       if result.code == 0 then
-        notify(job.name .. " stop requested; refreshing status")
+        notify(job.name .. " stop accepted; refreshing status")
       else
         notify(vim.trim(result.stderr), vim.log.levels.ERROR)
       end
@@ -350,31 +498,95 @@ local function stop_job()
   end)
 end
 
+local function automatic_unit_names(job, enabling)
+  local units = {}
+  if enabling then
+    if job.watcher then
+      units[#units + 1] = job.watcher
+    end
+    if job.timer then
+      units[#units + 1] = job.timer
+    end
+  else
+    if job.timer then
+      units[#units + 1] = job.timer
+    end
+    if job.watcher then
+      units[#units + 1] = job.watcher
+    end
+  end
+  return units
+end
+
+local function change_automatic_units(job, enabling, callback)
+  local units = automatic_unit_names(job, enabling)
+  local changed = {}
+  local errors = {}
+
+  local function rollback(index)
+    if index == 0 then
+      callback(errors)
+      return
+    end
+    run({ "systemctl", "--user", "disable", "--now", changed[index] }, function(result)
+      if result.code ~= 0 then
+        errors[#errors + 1] = "rollback " .. changed[index] .. ": " .. vim.trim(result.stderr)
+      end
+      rollback(index - 1)
+    end)
+  end
+
+  local function step(index)
+    if index > #units then
+      callback(errors)
+      return
+    end
+    local verb = enabling and "enable" or "disable"
+    run({ "systemctl", "--user", verb, "--now", units[index] }, function(result)
+      if result.code == 0 then
+        changed[#changed + 1] = units[index]
+        step(index + 1)
+        return
+      end
+
+      errors[#errors + 1] = units[index] .. ": " .. vim.trim(result.stderr)
+      if enabling then
+        rollback(#changed)
+      else
+        -- Continue pausing after an error so the other automatic trigger is
+        -- still stopped whenever possible.
+        step(index + 1)
+      end
+    end)
+  end
+
+  step(1)
+end
+
 local function toggle_schedule()
   local job = selected_job()
   if not job then
     return
   end
-  if not job.timer then
+  if not job.timer and not job.watcher then
     notify(job.name .. " is a manual-only job")
     return
   end
 
   if not schedule_can_toggle(job) then
-    notify("Schedule state is unavailable or needs attention", vim.log.levels.ERROR)
+    notify("Automatic state is unavailable", vim.log.levels.ERROR)
     return
   end
-  local scheduled = schedule_is_active(job)
-  local action = scheduled and "Pause schedule" or "Enable schedule"
+  local scheduled = schedule_has_enabled_or_active_unit(job)
+  local action = scheduled and "Pause automatic" or "Enable automatic"
   confirm(action .. " for " .. job.name .. "?", action, function()
-    local verb = scheduled and "disable" or "enable"
-    run({ "systemctl", "--user", verb, "--now", job.timer }, function(result)
-      if result.code == 0 then
+    change_automatic_units(job, not scheduled, function(errors)
+      if #errors == 0 then
         notify(job.name .. (scheduled
           and " pause accepted; refreshing status"
           or " enable accepted; refreshing status"))
       else
-        notify(vim.trim(result.stderr), vim.log.levels.ERROR)
+        notify(table.concat(errors, "\n"), vim.log.levels.ERROR)
       end
       M.refresh()
     end)
@@ -386,7 +598,16 @@ local function show_logs()
   if not job then
     return
   end
-  run({ "journalctl", "--user-unit=" .. job.service, "-n", "100", "--no-pager", "--output=short-iso" }, function(result)
+  local command = { "journalctl" }
+  command[#command + 1] = "--user-unit=" .. job.service
+  if job.reconcile_service then
+    command[#command + 1] = "--user-unit=" .. job.reconcile_service
+  end
+  if job.watcher then
+    command[#command + 1] = "--user-unit=" .. job.watcher
+  end
+  vim.list_extend(command, { "-n", "100", "--no-pager", "--output=short-iso" })
+  run(command, function(result)
     if result.code ~= 0 then
       notify(vim.trim(result.stderr), vim.log.levels.ERROR)
       return
@@ -442,8 +663,8 @@ local function configure_buffer(bufnr)
 
   local keymaps = {
     { "r", run_now, "Run routine job now" },
-    { "x", stop_job, "Stop the current routine job run" },
-    { "s", toggle_schedule, "Enable or pause routine schedule" },
+    { "x", stop_job, "Stop active routine job runs" },
+    { "s", toggle_schedule, "Enable or pause automatic routine job triggers" },
     { "l", show_logs, "Show routine job logs" },
     { "<CR>", show_logs, "Show routine job logs" },
     { "e", edit_job, "Edit routine job definition" },
@@ -516,15 +737,29 @@ function M.setup(opts)
     error("routine jobs refresh_ms must be at least 1000")
   end
   local seen = {}
+  local function validate_service(unit, label, job_name)
+    if type(unit) ~= "string"
+      or not unit:match("^[%w@_.%-]+%.service$")
+      or unit:sub(1, 1) == "-"
+    then
+      error("invalid routine job " .. label .. " for " .. job_name)
+    end
+    if seen[unit] then
+      error("duplicate routine job unit: " .. unit)
+    end
+    seen[unit] = true
+  end
+
   for _, job in ipairs(next_config.jobs) do
     if type(job.name) ~= "string" or job.name == "" then
       error("routine job name must be a non-empty string")
     end
-    if type(job.service) ~= "string"
-      or not job.service:match("^[%w@_.%-]+%.service$")
-      or job.service:sub(1, 1) == "-"
-    then
-      error("invalid routine job service for " .. job.name)
+    validate_service(job.service, "service", job.name)
+    if job.reconcile_service then
+      validate_service(job.reconcile_service, "reconcile service", job.name)
+    end
+    if job.watcher then
+      validate_service(job.watcher, "watcher", job.name)
     end
     if job.timer and (
       type(job.timer) ~= "string"
@@ -533,10 +768,6 @@ function M.setup(opts)
     ) then
       error("invalid routine job timer for " .. job.name)
     end
-    if seen[job.service] then
-      error("duplicate routine job service: " .. job.service)
-    end
-    seen[job.service] = true
   end
   config = next_config
   state.jobs = vim.deepcopy(config.jobs)

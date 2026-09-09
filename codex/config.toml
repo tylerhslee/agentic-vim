@@ -1,0 +1,8 @@
+# Portable parts of the Codex configuration used by Agentic.nvim.
+# Authentication and per-project trust are intentionally machine-local.
+model = "gpt-5.6-sol"
+model_reasoning_effort = "medium"
+default_permissions = ":danger-full-access"
+approval_policy = "never"
+approvals_reviewer = "user"
+cli_auth_credentials_store = "auto"

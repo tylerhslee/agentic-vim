@@ -19,8 +19,11 @@ crosses the filesystem boundary; Linux tools still use the local WSL path.
 ## Setup
 
 WSL was seeded from Windows and verified by checksum before enabling the mirror.
-The mirror uses rsync and a systemd user timer, checking about every 15 seconds
-while the WSL user service manager is running. It copies changes and propagates deletions from WSL to Windows.
+The mirror uses Watchexec, rsync, and systemd user services. Watchexec recursively
+watches the native WSL vault and requests a mirror run after one second of quiet.
+The guarded mirror copies changes and propagates deletions from WSL to Windows.
+An hourly systemd timer performs a forced whole-tree reconciliation in case a
+filesystem notification was missed or the Windows copy drifted.
 The copies may differ while edits or synchronization are in progress. It is not
 two-way synchronization and cannot update Windows while WSL is stopped.
 
@@ -30,8 +33,18 @@ deleted destination files belong under
 `~/.local/state/leeharin-mirror/backups`. These copies are a recovery aid, not
 an independent backup of the authoritative WSL folder.
 
-An unchanged vault skips Windows access. Windows-only changes are corrected on
-the next vault change or a forced run, not by idle checks. The Windows uploader's
+The event trigger is the first-party Watchexec 2.7.1 Linux x86-64 binary at
+`~/.local/lib/watchexec/2.7.1/watchexec`. Its release archive was verified
+against the publisher's per-asset SHA-256 value
+`0b0946cdb8c9151d1db5a2c552b6229724960a58b0417fb2a20f810c2135abd2`
+before installation. Watchexec
+only decides when to start the existing guarded service; it does not own mirror
+direction, validation, copying, deletion, or recovery policy.
+
+Ordinary event runs fingerprint the source and skip Windows access when it is
+unchanged. The hourly forced run also compares Windows, so Windows-only changes
+are corrected within the next reconciliation window. A forced comparison that
+finds no difference does not create an empty recovery directory. The Windows uploader's
 root `.tmp.driveupload` temporary folder is excluded and protected; all regular
 files and directories inside the vault are mirrored, including `.obsidian`.
 Project-level source, agent configuration, and repository metadata never enter
@@ -47,37 +60,43 @@ start WSL from Windows by itself.
 
 ## Controls
 
-Check status and recent activity:
+Check automatic triggers, current work, and recent activity:
 
 ```bash
-systemctl --user status leeharin-mirror.timer leeharin-mirror.service
-journalctl --user -u leeharin-mirror.service -n 30 --no-pager
+systemctl --user status leeharin-mirror-watch.service leeharin-mirror.timer \
+  leeharin-mirror.service leeharin-mirror-reconcile.service
+journalctl --user \
+  -u leeharin-mirror-watch.service \
+  -u leeharin-mirror.service \
+  -u leeharin-mirror-reconcile.service -n 50 --no-pager
 ```
 
-Pause scheduled copying and stop any current run:
+Pause both automatic triggers, then stop any current run:
 
 ```bash
-systemctl --user stop leeharin-mirror.timer leeharin-mirror.service
+systemctl --user disable --now leeharin-mirror-watch.service leeharin-mirror.timer
+systemctl --user stop leeharin-mirror.service leeharin-mirror-reconcile.service
 ```
 
-Resume scheduling, or request one immediate run:
+Resume automatic event watching and hourly reconciliation, or request one
+immediate ordinary run:
 
 ```bash
-systemctl --user start leeharin-mirror.timer
+systemctl --user enable --now leeharin-mirror-watch.service leeharin-mirror.timer
 systemctl --user start leeharin-mirror.service
 ```
 
 Disable automatic startup and stop current activity:
 
 ```bash
-systemctl --user disable --now leeharin-mirror.timer
-systemctl --user stop leeharin-mirror.service
+systemctl --user disable --now leeharin-mirror-watch.service leeharin-mirror.timer
+systemctl --user stop leeharin-mirror.service leeharin-mirror-reconcile.service
 ```
 
-Re-enable automatic scheduling:
+Re-enable automatic operation:
 
 ```bash
-systemctl --user enable --now leeharin-mirror.timer
+systemctl --user enable --now leeharin-mirror-watch.service leeharin-mirror.timer
 ```
 
 Force a Windows comparison even when the WSL files have not changed:
@@ -88,9 +107,17 @@ python3 ~/.local/lib/leeharin-mirror/mirror.py force
 
 ## Recovery
 
-Pause the timer and service before investigating an unwanted change. Inspect
+Pause both automatic triggers and active mirror services before investigating
+an unwanted change. Inspect
 `~/.local/state/leeharin-mirror/backups` and restore the wanted content into the
 authoritative WSL vault. The pre-cutover copy of the former Windows layout is at
 `~/.local/state/leeharin-mirror/migration-20260908/windows-before`. Review restored
-content before resuming the timer; restoring only the Windows copy would allow
-the next run to replace it again.
+content before resuming automatic operation; restoring only the Windows copy
+would allow the next event or hourly reconciliation to replace it again.
+
+To roll back the event-driven trigger, disable and stop
+`leeharin-mirror-watch.service`, restore the timer's previous 15-second
+`OnUnitInactiveSec` definition, reload the user manager, and re-enable the timer.
+The guarded Python/rsync mirror is unchanged as the correctness boundary. After
+rollback, the versioned Watchexec directory can be removed once no unit refers
+to it.

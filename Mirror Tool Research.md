@@ -13,19 +13,21 @@ A production design would use a user `systemd` service roughly equivalent to:
 ```text
 watchexec
   --watch /home/tylerhyun/leeharin/LeeHaRin
-  --debounce 2s
+  --project-origin /home/tylerhyun/leeharin/LeeHaRin
+  --debounce 1s
   --on-busy-update queue
   --ignore-nothing
   --no-follow-symlinks
+  --no-meta
   --shell none
-  -- /usr/bin/python3 /home/tylerhyun/.local/lib/leeharin-mirror/mirror.py run
+  -- /usr/bin/systemctl --user start leeharin-mirror.service
 ```
 
 These flags matter. Watchexec recursively watches directories using kernel mechanisms, runs the command once on startup, and debounces related events ([official manual](https://github.com/watchexec/watchexec/blob/main/doc/watchexec.1.md#description)). `queue` schedules one more run if a change arrives while the mirror is running; its default instead ignores such events ([official manual](https://github.com/watchexec/watchexec/blob/main/doc/watchexec.1.md#command)). `--ignore-nothing` prevents its built-in and discovered ignore rules from hiding a file that the mirror contract includes, while explicit watcher ignores could still be added for the four roots already excluded by the Python program ([official filtering documentation](https://github.com/watchexec/watchexec/blob/main/doc/watchexec.1.md#filtering)). `--shell none` preserves an explicit argument vector instead of introducing shell parsing.
 
 Do **not** remove reconciliation entirely. Linux inotify watches are not intrinsically recursive, have per-user watch limits, have a finite event queue, and can lose events on overflow; robust consumers must be prepared to rescan ([Linux `inotify(7)`](https://man7.org/linux/man-pages/man7/inotify.7.html)). Watchexec handles recursive watch construction, but it does not turn kernel notifications into an authoritative change ledger. A periodic forced comparison (for example hourly and at watcher startup) is the recovery path for a missed notification, watcher restart, or implementation defect. The present Python fingerprint means ordinary duplicate triggers are harmless.
 
-Watchexec fits the Rust preference without creating a new custom daemon. Its repository describes recursive monitoring and event coalescing, publishes first-party Linux binaries and Cargo installation, and had a signed CLI release on March 30, 2026 ([official repository](https://github.com/watchexec/watchexec), [official releases](https://github.com/watchexec/watchexec/releases), [official package list](https://github.com/watchexec/watchexec/blob/main/doc/packages.md)). It is not currently installed on this WSL system, so adoption would require an installation and a tested service cutover.
+Watchexec fits the Rust preference without creating a new custom daemon. Its repository describes recursive monitoring and event coalescing and publishes first-party Linux binaries and Cargo installation. Release 2.7.1 was published on September 3, 2026, in a history spanning 98 releases back to 2016 ([official repository](https://github.com/watchexec/watchexec), [official downloads](https://watchexec.github.io/downloads/watchexec/), [official package list](https://github.com/watchexec/watchexec/blob/main/doc/packages.md)).
 
 ### Comparison
 
@@ -57,4 +59,7 @@ Those strengths target a different topology. Syncthing's own FAQ says it is **no
 
 All WSL-side candidates share the same lifecycle constraint. Microsoft documents that WSL supports `systemd`, but also states that systemd services do not keep a WSL instance alive ([Microsoft WSL systemd documentation](https://learn.microsoft.com/en-us/windows/wsl/systemd)). Thus neither Watchexec nor Lsyncd can provide a Windows-always-on watcher from inside a stopped WSL distribution. They resume only when the distribution and its user service manager run. Microsoft also recommends keeping Linux-tool working files in the Linux filesystem rather than `/mnt/c` for performance, which supports retaining the WSL vault as authoritative and touching NTFS only during mirror operations ([Microsoft filesystem guidance](https://learn.microsoft.com/en-us/windows/wsl/filesystems)).
 
-The event-driven change should therefore be treated as a latency optimization, not as a stronger source of truth. The guarded full-tree comparison remains the reliability mechanism.
+The event-driven change should therefore be treated as a latency optimization,
+not as a stronger source of truth. The guarded full-tree comparison remains the
+reliability mechanism. The adopted design uses Watchexec 2.7.1 for source events
+and a fixed hourly forced reconciliation for missed events and destination drift.

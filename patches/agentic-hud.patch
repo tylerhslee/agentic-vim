@@ -1,0 +1,2459 @@
+diff --git a/README.md b/README.md
+index 55ff01e..cb6d519 100644
+--- a/README.md
++++ b/README.md
+@@ -655,7 +655,7 @@ Negative values are clamped to 0. Diff tool calls keep full header-only titles.
+ | `:lua require("agentic").add_buffer_diagnostics()`           | Add all diagnostics from current buffer to context                |
+ | `:lua require("agentic").new_session()`                      | Start a new session; choose what happens to the current one       |
+ | `:lua require("agentic").destroy_session(opts)`              | Destroy a session and its widget                                  |
+-| `:lua require("agentic").select_session()`                   | Pick any live session from a list and open it here                |
++| `:lua require("agentic").select_session()`                   | Open the Agent HUD, or the compact picker outside a visible chat  |
+ | `:lua require("agentic").next_session()`                     | Open the next session, wrapping at the end                        |
+ | `:lua require("agentic").prev_session()`                     | Open the previous session, wrapping at the start                  |
+ | `:lua require("agentic").new_session_with_provider()`        | Pick a provider, then start a new session with it                 |
+@@ -747,8 +747,18 @@ require("agentic").destroy_session({ session = 2 })
+ ```
+ 
+ Session keys appear in chat buffer names once more than one session exists.
+-`select_session()` lists every live session by title, marking the one visible in
+-the current tab.
++`select_session()` opens the Agent HUD over the prompt area when a chat is
++visible. The larger dashboard lists live sessions with their status and lets you
++open one with `<CR>`. Providers implementing draft ACP native subagent sessions
++also appear as a nested tree; selecting a child shows its independent messages,
++thoughts, plan, and tool output. Subagent views are observational and cannot be
++prompted, matching the draft protocol. The session list stays fixed above a
++scrollable activity preview. Use `j`/`k` to navigate, `<Tab>` to switch between
++panes, and `q` or `<Esc>` to close.
++Press `D` on a top-level session and confirm to destroy it; destroying active
++work cancels that work. Subagents cannot be destroyed independently.
++Outside a visible Agentic chat, `select_session()` retains the compact
++session-picker fallback.
+ 
+ ### Built-in Keybindings
+ 
+@@ -766,7 +776,7 @@ These keybindings are automatically set in Agentic buffers:
+ | `<localLeader>m` | n     | Switch model (keeps history)                                    |
+ | `<localLeader>t` | n     | Select thought effort level (model-dependent on Claude)         |
+ | `<localLeader>o` | n     | Open options modal                                              |
+-| `<localLeader>l` | n     | List every live session and open the chosen one                 |
++| `<localLeader>l` | n     | Toggle the Agent HUD (or session picker outside a visible chat) |
+ | `<localLeader>]` | n     | Open the next session                                           |
+ | `<localLeader>[` | n     | Open the previous session                                       |
+ | `<localLeader>D` | n     | Destroy the current session                                     |
+@@ -804,7 +814,7 @@ your setup:
+         switch_model = "<localLeader>m",     -- Switch model
+         change_thought_level = "<localLeader>t",  -- Select thought effort level
+         open_options = "<localLeader>o",  -- Open options modal
+-        select_session = "<localLeader>l",  -- List and open a session
++        select_session = "<localLeader>l",  -- Toggle Agent HUD / session picker
+         next_session = "<localLeader>]",    -- Open the next session
+         prev_session = "<localLeader>[",    -- Open the previous session
+         destroy_session = "<localLeader>D", -- Destroy the current session
+diff --git a/doc/agentic.txt b/doc/agentic.txt
+index 110ebfd..6e2dfa1 100644
+--- a/doc/agentic.txt
++++ b/doc/agentic.txt
+@@ -454,7 +454,13 @@ falling back to the most recently opened one.
+   require("agentic").destroy_session({ session = 2 })
+ <
+ Session keys appear in the chat buffer names once more than one session
+-exists. |agentic.select_session()| lists every live session.
++exists. |agentic.select_session()| opens the Agent HUD over the prompt
++area when a chat is visible. The dashboard lists live sessions and their
++status; use `j`/`k` and `<CR>` to open one. Providers implementing draft
++ACP native subagent sessions expose a nested, observational child tree.
++Selecting a child previews its messages, thoughts, plan, and tool output;
++children cannot be prompted. Use `q` or `<Esc>` to close. Without a chat
++visible, the compact session picker remains available.
+ 
+                                                       *agentic.toggle()*
+ agentic.toggle({opts})
+@@ -563,10 +569,16 @@ agentic.destroy_session({opts})
+ 
+                                               *agentic.select_session()*
+ agentic.select_session()
+-  Show a picker listing every live session and open the chosen one
+-  in the current tab. Entries are labelled with the session title,
+-  and the session visible in the current tab is marked. When no
+-  sessions exist, report that state without opening the picker.
++  Toggle the Agent HUD over a visible chat's prompt area. It lists
++  live sessions and native ACP subagents, shows their status and
++  previews their output. Press `<CR>` on a session to open it in the
++  current tab; press it on a subagent to inspect that child. Outside
++  a visible chat, show the compact session picker. The session list
++  stays fixed above a scrollable activity preview. Press `<Tab>` to
++  switch between panes. Press `D` on a top-level session and confirm
++  to destroy it; active work is cancelled. Subagents cannot be
++  destroyed independently. When no sessions exist, report that state
++  without opening either interface.
+ 
+                                                 *agentic.next_session()*
+ agentic.next_session()
+@@ -642,7 +654,7 @@ These keybindings are automatically set in Agentic buffers:
+   <localLeader>m         n       Switch model (keeps history)
+   <localLeader>t         n       Select thought effort level (model-dependent)
+   <localLeader>o         n       Open options modal
+-  <localLeader>l         n       List sessions and open one
++  <localLeader>l         n       Toggle Agent HUD / session picker
+   <localLeader>]         n       Open the next session
+   <localLeader>[         n       Open the previous session
+   <localLeader>D         n       Destroy the current session
+diff --git a/lua/agentic/acp/acp_client.lua b/lua/agentic/acp/acp_client.lua
+index 9ad2f45..f0f23dc 100644
+--- a/lua/agentic/acp/acp_client.lua
++++ b/lua/agentic/acp/acp_client.lua
+@@ -19,6 +19,7 @@ local KNOWN_ACP_KINDS = {
+     create = true,
+     write = true,
+     switch_mode = true,
++    SubAgent = true,
+ }
+ 
+ --- Split from the class so LuaLS validates instance fields without the prototype methods.
+@@ -73,6 +74,7 @@ function ACPClient:new(config, on_ready)
+                 writeTextFile = false,
+             },
+             terminal = false,
++            subagents = vim.empty_dict(),
+             session = {
+                 configOptions = {
+                     boolean = vim.empty_dict(),
+@@ -483,6 +485,14 @@ function ACPClient:__handle_session_update(params)
+ 
+     local session_update_type = update.sessionUpdate
+ 
++    if session_update_type == "subagent_spawned" then
++        local subscriber = self.subscribers[session_id]
++        if subscriber and subscriber.on_subagent_spawned then
++            subscriber.on_subagent_spawned(update)
++            return
++        end
++    end
++
+     if session_update_type == "tool_call" then
+         update.kind = update.kind or "other"
+         update.status = update.status or "pending"
+@@ -954,6 +964,23 @@ function ACPClient:send_prompt(session_id, prompt, callback)
+     self:_send_request("session/prompt", params, callback)
+ end
+ 
++--- Registers an observational subscriber for a capability-announced subagent.
++--- The child is not a promptable user session.
++--- @param session_id string
++--- @param handlers agentic.acp.ClientHandlers
++function ACPClient:subscribe_subagent(session_id, handlers)
++    self:_subscribe(session_id, handlers)
++end
++
++--- Removes a subagent subscriber without sending a lifecycle command.
++--- @param session_id string
++--- @param handlers agentic.acp.ClientHandlers
++function ACPClient:unsubscribe_subagent(session_id, handlers)
++    if self.subscribers[session_id] == handlers then
++        self.subscribers[session_id] = nil
++    end
++end
++
+ --- @param session_id string
+ --- @param mode_id string
+ --- @param callback fun(result: table|nil, err: agentic.acp.ACPError|nil)
+diff --git a/lua/agentic/acp/acp_client.test.lua b/lua/agentic/acp/acp_client.test.lua
+index 7ba81e8..16ad56e 100644
+--- a/lua/agentic/acp/acp_client.test.lua
++++ b/lua/agentic/acp/acp_client.test.lua
+@@ -203,6 +203,17 @@ describe("ACPClient", function()
+     end)
+ 
+     describe("initialize", function()
++        it("advertises native subagent session support", function()
++            create_ready_client()
++
++            assert.is_not_nil(captured_initialize_params)
++            --- @cast captured_initialize_params agentic.acp.InitializeParams
++            local subagents =
++                captured_initialize_params.clientCapabilities.subagents
++            assert.is_not_nil(subagents)
++            assert.equal("{}", vim.json.encode(subagents))
++        end)
++
+         it("advertises boolean session config options as an object", function()
+             assert.equal("[]", vim.json.encode({}))
+             create_ready_client()
+@@ -1175,6 +1186,8 @@ describe("ACPClient", function()
+             elicitation = true,
+             nes = true,
+             positionEncodings = true,
++            -- Draft ACP subagent sessions, negotiated bilaterally.
++            subagents = true,
+             _meta = true,
+         }
+ 
+@@ -1306,6 +1319,60 @@ describe("ACPClient", function()
+             assert.spy(received).was.called(1)
+             assert.spy(logger_notify_stub).was.called(0)
+         end)
++
++        it(
++            "registers a spawned child before its first update arrives",
++            function()
++                local client = create_ready_client()
++                local queue = queue_schedules()
++                local received = spy.new(function() end)
++                local child_handlers = vim.tbl_extend("force", NOOP_HANDLERS, {
++                    on_session_update = received,
++                }) --[[@as agentic.acp.ClientHandlers]]
++                local root_handlers = vim.tbl_extend("force", NOOP_HANDLERS, {
++                    on_subagent_spawned = function(update)
++                        client:subscribe_subagent(
++                            update.subagentSessionId,
++                            child_handlers
++                        )
++                    end,
++                }) --[[@as agentic.acp.ClientHandlers]]
++                client.subscribers.root = root_handlers
++
++                local on_message = captured_on_message
++                assert.is_not_nil(on_message)
++                --- @cast on_message -nil
++                on_message({
++                    jsonrpc = "2.0",
++                    method = "session/update",
++                    params = {
++                        sessionId = "root",
++                        update = {
++                            sessionUpdate = "subagent_spawned",
++                            subagentSessionId = "child",
++                            name = "worker",
++                            task = "Work",
++                            capabilities = {},
++                        },
++                    },
++                })
++                on_message({
++                    jsonrpc = "2.0",
++                    method = "session/update",
++                    params = {
++                        sessionId = "child",
++                        update = {
++                            sessionUpdate = "agent_message_chunk",
++                            content = { type = "text", text = "first" },
++                        },
++                    },
++                })
++
++                drain(queue)
++
++                assert.spy(received).was.called(1)
++            end
++        )
+     end)
+ 
+     describe("__handle_request_permission", function()
+diff --git a/lua/agentic/acp/acp_client_types.lua b/lua/agentic/acp/acp_client_types.lua
+index 59216b4..e96ae36 100644
+--- a/lua/agentic/acp/acp_client_types.lua
++++ b/lua/agentic/acp/acp_client_types.lua
+@@ -16,6 +16,7 @@
+ --- @class agentic.acp.ClientCapabilities
+ --- @field fs agentic.acp.FileSystemCapability
+ --- @field terminal boolean
++--- @field subagents? table
+ --- @field session? agentic.acp.ClientSessionCapabilities
+ 
+ --- @class agentic.acp.InitializeParams
+@@ -35,6 +36,19 @@
+ 
+ --- @class agentic.acp.SessionCapabilities
+ --- @field list? boolean
++--- @field subagents? table
++
++--- @class agentic.acp.SubagentSpawned
++--- @field sessionUpdate "subagent_spawned"
++--- @field subagentSessionId string
++--- @field name string
++--- @field task string
++--- @field capabilities table<string, boolean>
++
++--- @class agentic.acp.SubagentStateUpdate
++--- @field sessionUpdate "subagent_state_update"
++--- @field subagentSessionId string
++--- @field state "completed"|"failed"|"cancelled"|"disconnected"
+ 
+ --- @class agentic.acp.AgentCapabilities
+ --- @field loadSession boolean
+@@ -329,6 +343,8 @@
+ --- | agentic.acp.CurrentModeUpdate
+ --- | agentic.acp.UsageUpdate
+ --- | agentic.acp.SessionInfoUpdate
++--- | agentic.acp.SubagentSpawned
++--- | agentic.acp.SubagentStateUpdate
+ --- | agentic.acp.ConfigOptionsUpdate
+ 
+ --- @class agentic.acp.PermissionOption
+@@ -378,6 +394,7 @@
+ --- @field on_error agentic.acp.ClientHandlers.on_error
+ --- @field on_tool_call fun(tool_call: agentic.ui.MessageWriter.ToolCallBlock): nil
+ --- @field on_tool_call_update fun(tool_call: agentic.ui.MessageWriter.ToolCallBlock): nil
++--- @field on_subagent_spawned? fun(update: agentic.acp.SubagentSpawned): nil Runs synchronously so the child subscriber exists before its first update
+ 
+ --- @class agentic.acp.ACPProviderConfig
+ --- @field name? string Provider name
+diff --git a/lua/agentic/config_default.lua b/lua/agentic/config_default.lua
+index a785b46..bbc87d3 100644
+--- a/lua/agentic/config_default.lua
++++ b/lua/agentic/config_default.lua
+@@ -87,7 +87,7 @@
+ --- @field switch_model agentic.UserConfig.KeymapValue Open the model switcher
+ --- @field change_thought_level agentic.UserConfig.KeymapValue Open the thought-level switcher
+ --- @field open_options agentic.UserConfig.KeymapValue Open the agent config options modal
+---- @field select_session agentic.UserConfig.KeymapValue Open the session picker
++--- @field select_session agentic.UserConfig.KeymapValue Toggle the Agent HUD, or open the compact picker outside a visible chat
+ --- @field next_session agentic.UserConfig.KeymapValue Show the next session
+ --- @field prev_session agentic.UserConfig.KeymapValue Show the previous session
+ --- @field destroy_session agentic.UserConfig.KeymapValue Destroy the current session
+diff --git a/lua/agentic/session_manager.lua b/lua/agentic/session_manager.lua
+index 741147c..2490eb4 100644
+--- a/lua/agentic/session_manager.lua
++++ b/lua/agentic/session_manager.lua
+@@ -9,6 +9,7 @@ local FileSystem = require("agentic.utils.file_system")
+ local Logger = require("agentic.utils.logger")
+ local SlashCommands = require("agentic.acp.slash_commands")
+ local SessionState = require("agentic.acp.session_state")
++local SubagentStore = require("agentic.subagent_store")
+ local EnvironmentInfo = require("agentic.utils.environment_info")
+ local Hooks = require("agentic.utils.hooks")
+ 
+@@ -39,6 +40,9 @@ local Hooks = require("agentic.utils.hooks")
+ --- @field _on_new_session fun(session: agentic.SessionManager)
+ --- @field _session_ready_callbacks fun(succeeded: boolean)[]
+ --- @field pending_replacement_sources? table<any, boolean>
++--- @field subagents agentic.SubagentStore
++--- @field _subagent_handlers table<string, agentic.acp.ClientHandlers>
++--- @field _subagent_tools table<string, agentic.ui.MessageWriter.ToolCallBlock>
+ local SessionManager = {}
+ SessionManager.__index = SessionManager
+ 
+@@ -90,9 +94,12 @@ function SessionManager:new(agent, provider_name, on_new_session)
+         _on_new_session = on_new_session,
+         history_to_send = nil,
+         _session_ready_callbacks = {},
++        _subagent_handlers = {},
++        _subagent_tools = {},
+     }, self)
+ 
+     self.agent = agent
++    self.subagents = SubagentStore:new()
+ 
+     self.chat_history = ChatHistory:new()
+ 
+@@ -211,6 +218,23 @@ function SessionManager:_handle_connection_error()
+     )
+ end
+ 
++--- @return "starting"|"working"|"needs_input"|"idle"|"error" status
++function SessionManager:get_navigation_status()
++    if self._connection_error or self._session_creation_failed then
++        return "error"
++    end
++    if self.permission_manager and self.permission_manager:has_pending() then
++        return "needs_input"
++    end
++    if not self.session_id then
++        return "starting"
++    end
++    if self.is_generating then
++        return "working"
++    end
++    return "idle"
++end
++
+ --- @param succeeded boolean
+ function SessionManager:_resolve_session_ready_callbacks(succeeded)
+     local callbacks = self._session_ready_callbacks or {}
+@@ -303,7 +327,11 @@ end
+ --- @param update agentic.acp.SessionUpdateMessage
+ --- @param replaying boolean|nil
+ function SessionManager:_on_session_update(update, replaying)
+-    if update.sessionUpdate == "user_message_chunk" then
++    if update.sessionUpdate == "subagent_spawned" then
++        self:_spawn_subagent(self.session_id or "", update)
++    elseif update.sessionUpdate == "subagent_state_update" then
++        self:_finish_subagent(update)
++    elseif update.sessionUpdate == "user_message_chunk" then
+         if replaying then
+             local text = update.content
+                 and update.content.type == "text"
+@@ -367,7 +395,10 @@ function SessionManager:_on_session_update(update, replaying)
+         self.session_state:set_usage(update)
+         self.widget:schedule_header_refresh()
+     elseif update.sessionUpdate == "session_info_update" then
+-        -- Session metadata is currently informational only
++        if type(update.title) == "string" then
++            self.chat_history.title = update.title
++            self.widget:set_session_title(update.title)
++        end
+     else
+         -- TODO: Move this to Logger from notify to debug when confidence is high
+         Logger.notify(
+@@ -396,6 +427,109 @@ function SessionManager:_on_session_update(update, replaying)
+     Hooks.invoke("on_session_update", hook_data)
+ end
+ 
++--- @param parent_session_id string
++--- @param update agentic.acp.SubagentSpawned
++function SessionManager:_spawn_subagent(parent_session_id, update)
++    self.subagents:spawn(parent_session_id, update)
++    local session_id = update.subagentSessionId
++    if self._subagent_handlers[session_id] then
++        return
++    end
++
++    local handlers = self:_build_subagent_handlers(session_id)
++    self._subagent_handlers[session_id] = handlers
++    self.agent:subscribe_subagent(session_id, handlers)
++end
++
++--- @param update agentic.acp.SubagentStateUpdate
++function SessionManager:_finish_subagent(update)
++    self.subagents:set_state(update)
++    local session_id = update.subagentSessionId
++    local handlers = self._subagent_handlers[session_id]
++    if handlers then
++        self.agent:unsubscribe_subagent(session_id, handlers)
++        self._subagent_handlers[session_id] = nil
++    end
++end
++
++--- @param session_id string
++--- @return agentic.acp.ClientHandlers handlers
++function SessionManager:_build_subagent_handlers(session_id)
++    --- @type agentic.acp.ClientHandlers
++    local handlers = {
++        on_subagent_spawned = function(update)
++            if not self._destroyed then
++                self:_spawn_subagent(session_id, update)
++            end
++        end,
++        on_error = function(err)
++            if not self._destroyed then
++                Logger.debug("Subagent error: ", err)
++            end
++        end,
++        on_session_update = function(update)
++            if self._destroyed then
++                return
++            end
++            if update.sessionUpdate == "subagent_spawned" then
++                self:_spawn_subagent(session_id, update)
++            elseif update.sessionUpdate == "subagent_state_update" then
++                self:_finish_subagent(update)
++            else
++                self.subagents:append_session_update(session_id, update)
++            end
++        end,
++        on_tool_call = function(tool_call)
++            if self._destroyed then
++                return
++            end
++            self.subagents:append_tool_call(session_id, tool_call)
++            if tool_call.tool_call_id then
++                self._subagent_tools[tool_call.tool_call_id] = tool_call
++            end
++        end,
++        on_tool_call_update = function(tool_call)
++            if self._destroyed then
++                return
++            end
++            self.subagents:append_tool_call(session_id, tool_call)
++            local tool_call_id = tool_call.tool_call_id
++            if tool_call_id then
++                local existing = self._subagent_tools[tool_call_id]
++                self._subagent_tools[tool_call_id] = existing
++                        and vim.tbl_deep_extend("force", existing, tool_call)
++                    or tool_call
++                if self.message_writer.tool_call_blocks[tool_call_id] then
++                    self:_on_tool_call_update(tool_call)
++                end
++            end
++        end,
++        on_request_permission = function(request, callback)
++            if self._destroyed then
++                callback(nil)
++                return
++            end
++            local tool_call_id = request.toolCall.toolCallId
++            local tool_call = self._subagent_tools[tool_call_id]
++            if
++                tool_call
++                and not self.message_writer.tool_call_blocks[tool_call_id]
++            then
++                local child = self.subagents:get(session_id)
++                tool_call = vim.deepcopy(tool_call)
++                tool_call.argument = string.format(
++                    "[%s] %s",
++                    child and child.name or "subagent",
++                    tool_call.argument or "Permission request"
++                )
++                self:_on_tool_call(tool_call)
++            end
++            SessionManager._handle_request_permission(self, request, callback)
++        end,
++    }
++    return handlers
++end
++
+ --- @param tool_call agentic.ui.MessageWriter.ToolCallBlock
+ --- @param replaying boolean|nil
+ function SessionManager:_on_tool_call(tool_call, replaying)
+@@ -515,6 +649,21 @@ function SessionManager:schedule_header_refresh()
+     self.widget:schedule_header_refresh()
+ end
+ 
++--- Requests a provider-persisted title. The visible title changes only when the
++--- provider confirms it with `session_info_update`.
++--- @param title string
++--- @return boolean submitted
++function SessionManager:rename(title)
++    title = vim.trim(title)
++    if title == "" then
++        return false
++    end
++    return self:_handle_input_submit(
++        "/rename " .. title,
++        { derive_title = false }
++    )
++end
++
+ --- @param mode_id string
+ function SessionManager:_set_mode_to_chat_header(mode_id)
+     local mode_name = self.config_options:get_mode_name(mode_id)
+@@ -525,8 +674,9 @@ function SessionManager:_set_mode_to_chat_header(mode_id)
+ end
+ 
+ --- @param input_text string
++--- @param opts? { derive_title?: boolean }
+ --- @return boolean submitted
+-function SessionManager:_handle_input_submit(input_text)
++function SessionManager:_handle_input_submit(input_text, opts)
+     -- BEFORE the submit guard, so `/new` escapes a stuck session.
+     if input_text:match("^/new%s") or input_text:match("^/new$") then
+         self._on_new_session(self)
+@@ -549,7 +699,10 @@ function SessionManager:_handle_input_submit(input_text)
+     end
+ 
+     -- First submit only, so the picker label stays stable.
+-    if self.chat_history.title == "" then
++    if
++        self.chat_history.title == ""
++        and (not opts or opts.derive_title ~= false)
++    then
+         self.chat_history.title = title_from_prompt(input_text)
+     end
+ 
+@@ -654,6 +807,39 @@ function SessionManager:_handle_input_submit(input_text)
+     return true
+ end
+ 
++--- @param request agentic.acp.RequestPermission
++--- @param callback fun(option_id: string|nil)
++function SessionManager:_handle_request_permission(request, callback)
++    if self._destroyed then
++        callback(nil)
++        return
++    end
++
++    Hooks.invoke("on_request_permission", {
++        request = request,
++        session_id = self.session_id,
++        session_key = self.session_key,
++        tab_page_id = self.widget:get_visible_tab_id(),
++    })
++
++    self.status_animation:stop()
++
++    local function wrapped_callback(option_id)
++        callback(option_id)
++
++        local is_rejection = option_id == "reject_once"
++            or option_id == "reject_always"
++        self.diff_coordinator:clear(request.toolCall.toolCallId, is_rejection)
++
++        if not self.permission_manager:has_pending() then
++            self:_start_spinner("generating")
++        end
++    end
++
++    self.diff_coordinator:show(request.toolCall.toolCallId)
++    self.permission_manager:add_request(request, wrapped_callback)
++end
++
+ --- Every handler re-checks `_destroyed` at RUN time: `__with_subscriber` schedules
+ --- the call, so dropping the subscriber cannot un-queue an already-queued callback.
+ --- @param is_replaying (fun(): boolean)|nil
+@@ -665,6 +851,11 @@ function SessionManager:_build_handlers(is_replaying)
+ 
+     --- @type agentic.acp.ClientHandlers
+     local handlers = {
++        on_subagent_spawned = function(update)
++            if not self._destroyed then
++                self:_spawn_subagent(self.session_id or "", update)
++            end
++        end,
+         on_error = function(err)
+             if self._destroyed then
+                 return
+@@ -706,39 +897,7 @@ function SessionManager:_build_handlers(is_replaying)
+         end,
+ 
+         on_request_permission = function(request, callback)
+-            if self._destroyed then
+-                -- The ONLY handler that owes a JSON-RPC response, so it cannot
+-                -- return silently: the provider subprocess outlives this session.
+-                callback(nil)
+-                return
+-            end
+-
+-            Hooks.invoke("on_request_permission", {
+-                request = request,
+-                session_id = self.session_id,
+-                session_key = self.session_key,
+-                tab_page_id = self.widget:get_visible_tab_id(),
+-            })
+-
+-            self.status_animation:stop()
+-
+-            local function wrapped_callback(option_id)
+-                callback(option_id)
+-
+-                local is_rejection = option_id == "reject_once"
+-                    or option_id == "reject_always"
+-                self.diff_coordinator:clear(
+-                    request.toolCall.toolCallId,
+-                    is_rejection
+-                )
+-
+-                if not self.permission_manager:has_pending() then
+-                    self:_start_spinner("generating")
+-                end
+-            end
+-
+-            self.diff_coordinator:show(request.toolCall.toolCallId)
+-            self.permission_manager:add_request(request, wrapped_callback)
++            SessionManager._handle_request_permission(self, request, callback)
+         end,
+     }
+ 
+@@ -981,6 +1140,14 @@ function SessionManager:destroy()
+     end
+ 
+     self._destroyed = true
++    for session_id, handlers in pairs(self._subagent_handlers or {}) do
++        self.agent:unsubscribe_subagent(session_id, handlers)
++    end
++    self._subagent_handlers = {}
++    self._subagent_tools = {}
++    if self.subagents then
++        self.subagents:clear()
++    end
+     if self.session_id and self.agent and self.agent.cancel_session then
+         self.agent:cancel_session(self.session_id)
+         self.session_id = nil
+diff --git a/lua/agentic/session_manager.test.lua b/lua/agentic/session_manager.test.lua
+index dc3d499..1b6f196 100644
+--- a/lua/agentic/session_manager.test.lua
++++ b/lua/agentic/session_manager.test.lua
+@@ -36,6 +36,53 @@ local function mode_update(mode_id)
+ end
+ 
+ describe("agentic.SessionManager", function()
++    describe("_on_session_update: session_info_update", function()
++        it(
++            "applies a provider-confirmed title to history and the widget",
++            function()
++                local set_title_spy = spy.new(function() end)
++                local session = {
++                    session_id = "session-1",
++                    session_key = 3,
++                    _is_restoring_session = false,
++                    chat_history = { title = "Old title" },
++                    widget = {
++                        set_session_title = set_title_spy,
++                        get_visible_tab_id = function()
++                            return nil
++                        end,
++                    },
++                    _on_session_update = SessionManager._on_session_update,
++                } --[[@as agentic.SessionManager]]
++
++                session:_on_session_update({
++                    sessionUpdate = "session_info_update",
++                    title = "Provider title",
++                })
++
++                assert.equal("Provider title", session.chat_history.title)
++                assert
++                    .spy(set_title_spy).was
++                    .called_with(session.widget, "Provider title")
++            end
++        )
++
++        it("submits rename as a provider slash command", function()
++            local submit_spy = spy.new(function()
++                return true
++            end)
++            local session = {
++                rename = SessionManager.rename,
++                _handle_input_submit = submit_spy,
++            } --[[@as agentic.SessionManager]]
++
++            assert.is_true(session:rename("  Provider title  "))
++            assert
++                .spy(submit_spy).was
++                .called_with(session, "/rename Provider title", { derive_title = false })
++        end)
++    end)
++
+     describe("_on_session_update: current_mode_update", function()
+         --- @type TestStub
+         local notify_stub
+@@ -2283,6 +2330,7 @@ describe("agentic.SessionManager", function()
+                 can_submit_prompt = function()
+                     return true
+                 end,
++                rename = SessionManager.rename,
+                 destroy = SessionManager.destroy,
+                 _handle_input_submit = SessionManager._handle_input_submit,
+             } --[[@as agentic.SessionManager]]
+@@ -2382,6 +2430,17 @@ describe("agentic.SessionManager", function()
+             )
+         end)
+ 
++        it(
++            "keeps an untitled session unchanged until rename is confirmed",
++            function()
++                local session = make_session()
++
++                assert.is_true(session:rename("Provider title"))
++
++                assert.equal("", session.chat_history.title)
++            end
++        )
++
+         it("truncates a long first prompt to 60 characters", function()
+             local session = make_session()
+ 
+@@ -2503,6 +2562,105 @@ describe("agentic.SessionManager", function()
+             end
+         )
+     end)
++
++    describe("get_navigation_status", function()
++        local function status_for(overrides)
++            local manager = vim.tbl_extend("force", {
++                session_id = "session",
++                is_generating = false,
++                _connection_error = false,
++                _session_creation_failed = false,
++                permission_manager = {
++                    has_pending = function()
++                        return false
++                    end,
++                },
++            }, overrides or {})
++            return SessionManager.get_navigation_status(manager)
++        end
++
++        it("reports startup before the ACP session exists", function()
++            assert.equal("starting", status_for({ session_id = false }))
++        end)
++
++        it("reports connection and creation failures", function()
++            assert.equal("error", status_for({ _connection_error = true }))
++            assert.equal(
++                "error",
++                status_for({ _session_creation_failed = true })
++            )
++        end)
++
++        it("gives pending input precedence over generation", function()
++            assert.equal("working", status_for({ is_generating = true }))
++            assert.equal(
++                "needs_input",
++                status_for({
++                    is_generating = true,
++                    permission_manager = {
++                        has_pending = function()
++                            return true
++                        end,
++                    },
++                })
++            )
++        end)
++
++        it("reports an initialized resting session as idle", function()
++            assert.equal("idle", status_for())
++        end)
++    end)
++
++    it(
++        "routes native subagent output into an independent child history",
++        function()
++            local SubagentStore = require("agentic.subagent_store")
++            local subscribed
++            local unsubscribed
++            local manager = setmetatable({
++                _destroyed = false,
++                _subagent_handlers = {},
++                _subagent_tools = {},
++                subagents = SubagentStore:new(),
++                message_writer = { tool_call_blocks = {} },
++                agent = {
++                    subscribe_subagent = function(_, session_id, handlers)
++                        subscribed =
++                            { session_id = session_id, handlers = handlers }
++                    end,
++                    unsubscribe_subagent = function(_, session_id, handlers)
++                        unsubscribed =
++                            { session_id = session_id, handlers = handlers }
++                    end,
++                },
++            }, SessionManager)
++
++            manager:_spawn_subagent("root", {
++                sessionUpdate = "subagent_spawned",
++                subagentSessionId = "child",
++                name = "worker",
++                task = "Inspect output",
++                capabilities = {},
++            })
++            assert.is_not_nil(subscribed)
++            subscribed.handlers.on_session_update({
++                sessionUpdate = "agent_message_chunk",
++                content = { type = "text", text = "child output" },
++            })
++            manager:_finish_subagent({
++                sessionUpdate = "subagent_state_update",
++                subagentSessionId = "child",
++                state = "completed",
++            })
++
++            local child = manager.subagents:get("child")
++            assert.is_not_nil(child)
++            --- @cast child -nil
++            assert.equal("child output", child.messages[1].text)
++            assert.equal("completed", child.state)
++            assert.equal("child", unsubscribed.session_id)
++        end
++    )
+ end)
+ 
+ describe("agentic.SessionManager one-shot lifecycle", function()
+diff --git a/lua/agentic/session_navigation.lua b/lua/agentic/session_navigation.lua
+index 2f5fc9b..95a8f37 100644
+--- a/lua/agentic/session_navigation.lua
++++ b/lua/agentic/session_navigation.lua
+@@ -35,9 +35,59 @@ local function cycle(step)
+ end
+ 
+ local SessionNavigation = {}
++local active_hud
++local RENAME_ACTION = { action = "rename" }
++
++--- @param session agentic.SessionManager
++local function prompt_rename(session)
++    vim.ui.input({
++        prompt = string.format("Rename session #%d: ", session.session_key),
++        default = session.chat_history.title,
++    }, function(title)
++        if title ~= nil and not session:rename(title) then
++            Logger.notify(
++                "Session rename was not submitted; finish or cancel its active work first",
++                vim.log.levels.WARN
++            )
++        end
++    end)
++end
++
++--- @param sessions agentic.SessionManager[]
++local function select_session_to_rename(sessions)
++    vim.ui.select(sessions, {
++        prompt = "Rename which session:",
++        format_item = function(item)
++            local title = item.chat_history.title
++            return string.format(
++                "%s (%d)",
++                title ~= "" and title or "Untitled",
++                item.session_key
++            )
++        end,
++    }, function(selected)
++        if selected then
++            prompt_rename(selected)
++        end
++    end)
++end
+ 
+ --- Shows a picker over every live session and opens the chosen one.
+ function SessionNavigation.select()
++    if active_hud and active_hud:is_open() then
++        active_hud:close()
++        active_hud = nil
++        return
++    end
++
++    local visible = SessionRegistry.visible_here()
++    if visible then
++        local SessionHud = require("agentic.ui.session_hud")
++        active_hud = SessionHud:new(visible)
++        active_hud:open()
++        return
++    end
++
+     local sessions = SessionRegistry.list()
+ 
+     if #sessions == 0 then
+@@ -47,10 +97,16 @@ function SessionNavigation.select()
+ 
+     local current_tab = vim.api.nvim_get_current_tabpage()
+ 
+-    vim.ui.select(sessions, {
++    local choices = vim.list_extend(vim.list_slice(sessions), { RENAME_ACTION })
++
++    vim.ui.select(choices, {
+         prompt = "Select a Chat session:",
+-        --- @param item agentic.SessionManager
++        --- @param item agentic.SessionManager|{ action: string }
+         format_item = function(item)
++            if item == RENAME_ACTION then
++                return "Rename session…"
++            end
++            --- @cast item agentic.SessionManager
+             local title = item.chat_history.title
+             local provider = item.agent
+                 and item.agent.provider_config
+@@ -72,6 +128,10 @@ function SessionNavigation.select()
+             return prefix .. label
+         end,
+     }, function(selected)
++        if selected == RENAME_ACTION then
++            select_session_to_rename(sessions)
++            return
++        end
+         local session_key = selected and selected.session_key
+ 
+         if session_key then
+diff --git a/lua/agentic/session_navigation.test.lua b/lua/agentic/session_navigation.test.lua
+index 81a22db..703b92c 100644
+--- a/lua/agentic/session_navigation.test.lua
++++ b/lua/agentic/session_navigation.test.lua
+@@ -9,6 +9,7 @@ describe("agentic.SessionNavigation", function()
+     local logger_notify_stub
+     local registry_mock
+     local ui_select_stub
++    local ui_input_stub
+ 
+     local original_registry = package.loaded["agentic.session_registry"]
+     local original_navigation = package.loaded["agentic.session_navigation"]
+@@ -42,6 +43,9 @@ describe("agentic.SessionNavigation", function()
+             current = spy.new(function()
+                 return current_session
+             end),
++            visible_here = spy.new(function()
++                return nil
++            end),
+             show_session = spy.new(function() end),
+         }
+ 
+@@ -49,11 +53,13 @@ describe("agentic.SessionNavigation", function()
+         package.loaded["agentic.session_navigation"] = nil
+         SessionNavigation = require("agentic.session_navigation")
+         ui_select_stub = spy.stub(vim.ui, "select")
++        ui_input_stub = spy.stub(vim.ui, "input")
+     end)
+ 
+     after_each(function()
+         logger_notify_stub:revert()
+         ui_select_stub:revert()
++        ui_input_stub:revert()
+         package.loaded["agentic.session_registry"] = original_registry
+         package.loaded["agentic.session_navigation"] = original_navigation
+     end)
+@@ -72,7 +78,9 @@ describe("agentic.SessionNavigation", function()
+         local second = create_session(2, "", nil)
+         sessions = { first, second }
+         ui_select_stub:invokes(function(items, opts, on_choice)
+-            assert.equal(sessions, items)
++            assert.equal(first, items[1])
++            assert.equal(second, items[2])
++            assert.equal("Rename session…", opts.format_item(items[3]))
+             assert.equal(
+                 "● First [TestProvider] (1)",
+                 opts.format_item(first)
+@@ -89,6 +97,64 @@ describe("agentic.SessionNavigation", function()
+         assert.spy(registry_mock.show_session).was.called_with(2)
+     end)
+ 
++    it("renames a session from the compact editor picker", function()
++        local first = create_session(1, "First", nil)
++        local second = create_session(2, "Second", nil)
++        local rename_spy = spy.new(function()
++            return true
++        end)
++        second.rename = rename_spy
++        sessions = { first, second }
++        local select_count = 0
++        ui_select_stub:invokes(function(items, opts, on_choice)
++            select_count = select_count + 1
++            if select_count == 1 then
++                assert.equal("Select a Chat session:", opts.prompt)
++                on_choice(items[3])
++            else
++                assert.equal("Rename which session:", opts.prompt)
++                on_choice(second)
++            end
++        end)
++        ui_input_stub:invokes(function(opts, on_confirm)
++            assert.equal("Rename session #2: ", opts.prompt)
++            assert.equal("Second", opts.default)
++            on_confirm("Provider title")
++        end)
++
++        SessionNavigation.select()
++
++        assert.spy(rename_spy).was.called_with(second, "Provider title")
++        assert.spy(registry_mock.show_session).was.called(0)
++    end)
++
++    it("opens the Agent HUD when a session is visible here", function()
++        local opened = spy.new(function() end)
++        local source = create_session(1, "First")
++        registry_mock.visible_here = spy.new(function()
++            return source
++        end)
++        package.loaded["agentic.ui.session_hud"] = {
++            new = function(_, received)
++                assert.equal(source, received)
++                return {
++                    open = opened,
++                    is_open = function()
++                        return false
++                    end,
++                }
++            end,
++        }
++        package.loaded["agentic.session_navigation"] = nil
++        SessionNavigation = require("agentic.session_navigation")
++
++        SessionNavigation.select()
++
++        assert.spy(opened).was.called(1)
++        assert.spy(ui_select_stub).was.called(0)
++        package.loaded["agentic.ui.session_hud"] = nil
++    end)
++
+     it("distinguishes untitled sessions on the same provider", function()
+         local first = create_session(1, "", nil)
+         local second = create_session(2, "", nil)
+diff --git a/lua/agentic/subagent_store.lua b/lua/agentic/subagent_store.lua
+new file mode 100644
+index 0000000..96ca36e
+--- /dev/null
++++ b/lua/agentic/subagent_store.lua
+@@ -0,0 +1,173 @@
++--- @class agentic.Subagent.Message
++--- @field type "agent"|"thought"|"plan"|"tool_call"
++--- @field text? string
++--- @field entries? agentic.acp.PlanEntry[]
++--- @field tool_call_id? string
++--- @field kind? agentic.acp.ToolKind
++--- @field argument? string
++--- @field body? string[]
++--- @field status? agentic.acp.ToolCallStatus
++
++--- @class agentic.Subagent
++--- @field session_id string
++--- @field parent_session_id string
++--- @field name string
++--- @field task string
++--- @field state "running"|"completed"|"failed"|"cancelled"|"disconnected"
++--- @field capabilities table<string, boolean>
++--- @field messages agentic.Subagent.Message[]
++
++--- @class agentic.SubagentStore
++--- @field _children table<string, agentic.Subagent>
++--- @field _order string[]
++local SubagentStore = {}
++SubagentStore.__index = SubagentStore
++
++--- @return agentic.SubagentStore store
++function SubagentStore:new()
++    --- @type agentic.SubagentStore
++    local instance = {
++        _children = {},
++        _order = {},
++    }
++    return setmetatable(instance, self)
++end
++
++--- @param parent_session_id string
++--- @param update agentic.acp.SubagentSpawned
++function SubagentStore:spawn(parent_session_id, update)
++    local session_id = update.subagentSessionId
++    if type(session_id) ~= "string" or session_id == "" then
++        return
++    end
++
++    local child = self._children[session_id]
++    if not child then
++        --- @type agentic.Subagent
++        child = {
++            session_id = session_id,
++            parent_session_id = parent_session_id,
++            name = update.name or "subagent",
++            task = update.task or "",
++            state = "running",
++            capabilities = update.capabilities or {},
++            messages = {},
++        }
++        self._children[session_id] = child
++        self._order[#self._order + 1] = session_id
++        return
++    end
++
++    child.parent_session_id = parent_session_id
++    child.name = update.name or child.name
++    child.task = update.task or child.task
++    child.capabilities = update.capabilities or child.capabilities
++    child.state = "running"
++end
++
++--- @param update agentic.acp.SubagentStateUpdate
++function SubagentStore:set_state(update)
++    local child = self._children[update.subagentSessionId]
++    if child and update.state then
++        child.state = update.state
++    end
++end
++
++--- @param session_id string
++--- @param update agentic.acp.SessionUpdateMessage
++function SubagentStore:append_session_update(session_id, update)
++    local child = self._children[session_id]
++    if not child then
++        return
++    end
++
++    local message_type
++    if update.sessionUpdate == "agent_message_chunk" then
++        message_type = "agent"
++    elseif update.sessionUpdate == "agent_thought_chunk" then
++        message_type = "thought"
++    elseif update.sessionUpdate == "plan" then
++        child.messages[#child.messages + 1] = {
++            type = "plan",
++            entries = vim.deepcopy(update.entries or {}),
++        }
++        return
++    else
++        return
++    end
++
++    local text = update.content
++        and update.content.type == "text"
++        and update.content.text
++    if type(text) ~= "string" or text == "" then
++        return
++    end
++
++    local last = child.messages[#child.messages]
++    if last and last.type == message_type then
++        last.text = (last.text or "") .. text
++    else
++        child.messages[#child.messages + 1] = {
++            type = message_type,
++            text = text,
++        }
++    end
++end
++
++--- @param session_id string
++--- @param tool_call agentic.ui.MessageWriter.ToolCallBlock
++function SubagentStore:append_tool_call(session_id, tool_call)
++    local child = self._children[session_id]
++    if not child then
++        return
++    end
++
++    local tool_call_id = tool_call.tool_call_id
++    if tool_call_id then
++        for index = #child.messages, 1, -1 do
++            local existing = child.messages[index]
++            if
++                existing.type == "tool_call"
++                and existing.tool_call_id == tool_call_id
++            then
++                child.messages[index] = vim.tbl_deep_extend(
++                    "force",
++                    existing,
++                    vim.deepcopy(tool_call)
++                )
++                return
++            end
++        end
++    end
++
++    --- @type agentic.Subagent.Message
++    local message = vim.tbl_deep_extend("force", {
++        type = "tool_call",
++    }, vim.deepcopy(tool_call))
++    child.messages[#child.messages + 1] = message
++end
++
++--- @return agentic.Subagent[] children
++function SubagentStore:list()
++    local children = {}
++    for _, session_id in ipairs(self._order) do
++        local child = self._children[session_id]
++        if child then
++            children[#children + 1] = child
++        end
++    end
++    return children
++end
++
++--- @param session_id string
++--- @return agentic.Subagent|nil child
++function SubagentStore:get(session_id)
++    return self._children[session_id]
++end
++
++function SubagentStore:clear()
++    self._children = {}
++    self._order = {}
++end
++
++return SubagentStore
+diff --git a/lua/agentic/subagent_store.test.lua b/lua/agentic/subagent_store.test.lua
+new file mode 100644
+index 0000000..569922c
+--- /dev/null
++++ b/lua/agentic/subagent_store.test.lua
+@@ -0,0 +1,108 @@
++local assert = require("tests.helpers.assert")
++
++describe("agentic.SubagentStore", function()
++    local SubagentStore
++    local store
++
++    before_each(function()
++        package.loaded["agentic.subagent_store"] = nil
++        SubagentStore = require("agentic.subagent_store")
++        store = SubagentStore:new()
++    end)
++
++    it("keeps a nested subagent tree in spawn order", function()
++        store:spawn("root", {
++            subagentSessionId = "child-1",
++            name = "researcher",
++            task = "Inspect the protocol",
++            capabilities = {},
++        })
++        store:spawn("child-1", {
++            subagentSessionId = "child-2",
++            name = "reviewer",
++            task = "Review findings",
++            capabilities = {},
++        })
++
++        local children = store:list()
++        assert.equal(2, #children)
++        assert.equal("root", children[1].parent_session_id)
++        assert.equal("child-1", children[2].parent_session_id)
++        assert.equal("running", children[2].state)
++    end)
++
++    it("collects independent message and thought output", function()
++        store:spawn("root", {
++            subagentSessionId = "child",
++            name = "worker",
++            task = "Work",
++            capabilities = {},
++        })
++        store:append_session_update("child", {
++            sessionUpdate = "agent_message_chunk",
++            content = { type = "text", text = "hello " },
++        })
++        store:append_session_update("child", {
++            sessionUpdate = "agent_message_chunk",
++            content = { type = "text", text = "world" },
++        })
++        store:append_session_update("child", {
++            sessionUpdate = "agent_thought_chunk",
++            content = { type = "text", text = "thinking" },
++        })
++
++        local child = store:get("child")
++        assert.is_not_nil(child)
++        assert.equal("hello world", child.messages[1].text)
++        assert.equal("thinking", child.messages[2].text)
++    end)
++
++    it("merges tool-call updates into the child transcript", function()
++        store:spawn("root", {
++            subagentSessionId = "child",
++            name = "worker",
++            task = "Work",
++            capabilities = {},
++        })
++        store:append_tool_call("child", {
++            tool_call_id = "tool-1",
++            kind = "search",
++            argument = "Find files",
++            status = "in_progress",
++        })
++        store:append_tool_call("child", {
++            tool_call_id = "tool-1",
++            status = "completed",
++            body = { "done" },
++        })
++
++        local child = store:get("child")
++        assert.is_not_nil(child)
++        assert.equal(1, #child.messages)
++        assert.equal("completed", child.messages[1].status)
++        assert.equal("search", child.messages[1].kind)
++        assert.equal({ "done" }, child.messages[1].body)
++    end)
++
++    it("records terminal state without losing output", function()
++        store:spawn("root", {
++            subagentSessionId = "child",
++            name = "worker",
++            task = "Work",
++            capabilities = {},
++        })
++        store:append_session_update("child", {
++            sessionUpdate = "agent_message_chunk",
++            content = { type = "text", text = "finished" },
++        })
++        store:set_state({
++            subagentSessionId = "child",
++            state = "completed",
++        })
++
++        local child = store:get("child")
++        assert.is_not_nil(child)
++        assert.equal("completed", child.state)
++        assert.equal("finished", child.messages[1].text)
++    end)
++end)
+diff --git a/lua/agentic/ui/chat_widget.lua b/lua/agentic/ui/chat_widget.lua
+index 1bc2d09..95941c0 100644
+--- a/lua/agentic/ui/chat_widget.lua
++++ b/lua/agentic/ui/chat_widget.lua
+@@ -910,6 +910,18 @@ function ChatWidget:schedule_header_refresh()
+     end, 150)
+ end
+ 
++--- Applies a provider-confirmed session title to the chat header and buffer.
++--- An empty title restores the default chat label.
++--- @param title string
++function ChatWidget:set_session_title(title)
++    local default_title = WindowDecoration.default_headers().chat.title
++    self.headers.chat.title = title ~= "" and title or default_title
++    self:schedule_header_refresh()
++    -- `render_header` deliberately skips background widgets, while their buffer
++    -- names still need to reflect the confirmed title before they are reopened.
++    WindowDecoration.refresh_buffer_names()
++end
++
+ --- Chat and input always consume session_state, plus any panel the user configured as a header function.
+ function ChatWidget:_render_dynamic_headers()
+     --- @type table<agentic.ui.ChatWidget.PanelNames, boolean>
+diff --git a/lua/agentic/ui/chat_widget.test.lua b/lua/agentic/ui/chat_widget.test.lua
+index 149bf71..0ed0a60 100644
+--- a/lua/agentic/ui/chat_widget.test.lua
++++ b/lua/agentic/ui/chat_widget.test.lua
+@@ -1865,6 +1865,23 @@ describe("agentic.ui.ChatWidget", function()
+             end
+             assert.is_true(panels.files)
+         end)
++
++        it(
++            "refreshes the chat header and hidden buffer name for a session title",
++            function()
++                local schedule_spy = spy.new(function() end)
++                local names_stub =
++                    spy.stub(WindowDecoration, "refresh_buffer_names")
++                widget.schedule_header_refresh = schedule_spy
++
++                widget:set_session_title("Provider title")
++                names_stub:revert()
++
++                assert.equal("Provider title", widget.headers.chat.title)
++                assert.spy(schedule_spy).was.called(1)
++                assert.spy(names_stub).was.called(1)
++            end
++        )
+     end)
+ end)
+ 
+diff --git a/lua/agentic/ui/session_hud.lua b/lua/agentic/ui/session_hud.lua
+new file mode 100644
+index 0000000..b2140b8
+--- /dev/null
++++ b/lua/agentic/ui/session_hud.lua
+@@ -0,0 +1,591 @@
++local BufHelpers = require("agentic.utils.buf_helpers")
++local Logger = require("agentic.utils.logger")
++
++local KEEP_SESSION = "Keep session"
++local DESTROY_SESSION = "Destroy session"
++
++--- @class agentic.ui.SessionHud.Target
++--- @field kind "session"|"subagent"
++--- @field session_key integer
++--- @field subagent_id? string
++
++--- @class agentic.ui.SessionHud
++--- @field _source agentic.SessionManager
++--- @field _list_bufnr? integer
++--- @field _list_winid? integer
++--- @field _preview_bufnr? integer
++--- @field _preview_winid? integer
++--- @field _targets table<integer, agentic.ui.SessionHud.Target>
++--- @field _selected? agentic.ui.SessionHud.Target
++--- @field _epoch integer
++local SessionHud = {}
++SessionHud.__index = SessionHud
++
++local STATUS_ICONS = {
++    starting = "◌",
++    working = "●",
++    needs_input = "!",
++    idle = "○",
++    error = "×",
++    running = "●",
++    completed = "✓",
++    failed = "×",
++    cancelled = "−",
++    disconnected = "?",
++}
++
++local function single_line(value)
++    return value:gsub("[\r\n]+", " ")
++end
++
++local function append_text(lines, value, prefix)
++    if type(value) == "string" and value ~= "" then
++        local normalized = value:gsub("\r\n", "\n"):gsub("\r", "\n")
++        for _, line in ipairs(vim.split(normalized, "\n", { plain = true })) do
++            lines[#lines + 1] = (prefix or "") .. line
++        end
++    end
++end
++
++local function append_messages(lines, messages)
++    for _, message in ipairs(messages) do
++        if message.type == "agent" then
++            append_text(lines, message.text)
++        elseif message.type == "thought" then
++            lines[#lines + 1] = "thinking:"
++            append_text(lines, message.text)
++        elseif message.type == "plan" then
++            lines[#lines + 1] = "plan:"
++            for _, entry in ipairs(message.entries or {}) do
++                lines[#lines + 1] = string.format(
++                    "  [%s] %s",
++                    single_line(entry.status or "pending"),
++                    single_line(entry.content or "")
++                )
++            end
++        elseif message.type == "tool_call" then
++            lines[#lines + 1] = string.format(
++                "%s: %s [%s]",
++                single_line(message.kind or "tool"),
++                single_line(message.argument or ""),
++                single_line(message.status or "pending")
++            )
++            for _, body_line in ipairs(message.body or {}) do
++                append_text(lines, body_line, "  ")
++            end
++        end
++    end
++end
++
++--- @param filetype string
++--- @return integer bufnr
++local function create_buffer(filetype)
++    local bufnr = vim.api.nvim_create_buf(false, true)
++    vim.bo[bufnr].buftype = "nofile"
++    vim.bo[bufnr].bufhidden = "wipe"
++    vim.bo[bufnr].swapfile = false
++    vim.bo[bufnr].filetype = filetype
++    vim.bo[bufnr].modifiable = false
++    return bufnr
++end
++
++--- @param sessions agentic.SessionManager[]
++--- @param selected agentic.ui.SessionHud.Target|nil
++--- @return string[] list_lines
++--- @return table<integer, agentic.ui.SessionHud.Target> targets
++--- @return string[] preview_lines
++function SessionHud.build_sections(sessions, selected)
++    table.sort(sessions, function(left, right)
++        return left.session_key < right.session_key
++    end)
++    local list_lines = {
++        "Agent HUD",
++        "j/k navigate  Enter open/inspect  e/R rename  D kill  Tab output  r refresh  q close",
++        "",
++    }
++    local targets = {}
++    local selected_session
++    local selected_child
++
++    for _, session in ipairs(sessions) do
++        local selected_here = selected
++            and selected.session_key == session.session_key
++        local title = session.chat_history.title
++        if title == "" then
++            title = "Untitled (" .. session.session_key .. ")"
++        end
++        list_lines[#list_lines + 1] = string.format(
++            "%s [%s] %s",
++            selected_here and "●" or "○",
++            single_line(session:get_navigation_status()),
++            single_line(title)
++        )
++        targets[#list_lines] =
++            { kind = "session", session_key = session.session_key }
++
++        local children = session.subagents and session.subagents:list() or {}
++        local by_parent = {}
++        for _, child in ipairs(children) do
++            by_parent[child.parent_session_id] = by_parent[child.parent_session_id]
++                or {}
++            local siblings = by_parent[child.parent_session_id]
++            siblings[#siblings + 1] = child
++            if selected and selected.subagent_id == child.session_id then
++                selected_session, selected_child = session, child
++            end
++        end
++        local function add_children(parent_id, prefix)
++            local siblings = by_parent[parent_id] or {}
++            for index, child in ipairs(siblings) do
++                local last = index == #siblings
++                list_lines[#list_lines + 1] = string.format(
++                    "  %s%s %s [%s] %s — %s",
++                    prefix,
++                    last and "└─" or "├─",
++                    STATUS_ICONS[child.state] or "?",
++                    single_line(child.state),
++                    single_line(child.name),
++                    single_line(child.task)
++                )
++                targets[#list_lines] = {
++                    kind = "subagent",
++                    session_key = session.session_key,
++                    subagent_id = child.session_id,
++                }
++                add_children(
++                    child.session_id,
++                    prefix .. (last and "   " or "│  ")
++                )
++            end
++        end
++        add_children(session.session_id, "")
++        if selected_here and not selected_child then
++            selected_session = session
++        end
++    end
++
++    local preview_lines = {}
++    if selected_child then
++        preview_lines[#preview_lines + 1] = "Subagent: "
++            .. single_line(selected_child.name)
++        preview_lines[#preview_lines + 1] = "Task: "
++            .. single_line(selected_child.task)
++        preview_lines[#preview_lines + 1] = "Status: "
++            .. single_line(selected_child.state)
++        preview_lines[#preview_lines + 1] = ""
++        append_messages(preview_lines, selected_child.messages)
++    elseif selected_session then
++        preview_lines[#preview_lines + 1] = "Session: "
++            .. (
++                selected_session.chat_history.title ~= ""
++                    and single_line(selected_session.chat_history.title)
++                or "Untitled"
++            )
++        preview_lines[#preview_lines + 1] = "Status: "
++            .. single_line(selected_session:get_navigation_status())
++        preview_lines[#preview_lines + 1] = ""
++        append_messages(preview_lines, selected_session.chat_history.messages)
++    else
++        preview_lines[#preview_lines + 1] =
++            "Select a session or subagent to inspect its output."
++    end
++
++    return list_lines, targets, preview_lines
++end
++
++--- @param sessions agentic.SessionManager[]
++--- @param selected agentic.ui.SessionHud.Target|nil
++--- @return string[] lines
++--- @return table<integer, agentic.ui.SessionHud.Target> targets
++function SessionHud.build_content(sessions, selected)
++    local list_lines, targets, preview_lines =
++        SessionHud.build_sections(sessions, selected)
++    local lines = vim.list_extend({}, list_lines)
++    lines[#lines + 1] = ""
++    lines[#lines + 1] = string.rep("─", 48)
++    vim.list_extend(lines, preview_lines)
++    return lines, targets
++end
++
++--- @param source agentic.SessionManager
++function SessionHud:new(source)
++    return setmetatable({
++        _source = source,
++        _targets = {},
++        _selected = { kind = "session", session_key = source.session_key },
++        _epoch = 0,
++    }, self)
++end
++
++--- @param reset_preview? boolean
++function SessionHud:_render(reset_preview)
++    local list_bufnr = self._list_bufnr
++    local list_winid = self._list_winid
++    local preview_bufnr = self._preview_bufnr
++    local preview_winid = self._preview_winid
++    if
++        not list_bufnr
++        or not vim.api.nvim_buf_is_valid(list_bufnr)
++        or not BufHelpers.is_win_usable(list_winid)
++        or not preview_bufnr
++        or not vim.api.nvim_buf_is_valid(preview_bufnr)
++        or not BufHelpers.is_win_usable(preview_winid)
++    then
++        return
++    end
++    --- @cast list_winid integer
++    --- @cast preview_winid integer
++    local cursor = vim.api.nvim_win_get_cursor(list_winid)
++    self._selected = self._targets[cursor[1]] or self._selected
++    local list_lines, targets, preview_lines = SessionHud.build_sections(
++        require("agentic.session_registry").list(),
++        self._selected
++    )
++    local preview_view
++    if not reset_preview then
++        preview_view = vim.api.nvim_win_call(preview_winid, vim.fn.winsaveview)
++    end
++    self._targets = targets
++    BufHelpers.with_modifiable(list_bufnr, function(bufnr)
++        vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, list_lines)
++    end)
++    BufHelpers.with_modifiable(preview_bufnr, function(bufnr)
++        vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, preview_lines)
++    end)
++    local target_line = 4
++    for line, target in pairs(targets) do
++        if
++            self._selected
++            and target.kind == self._selected.kind
++            and target.session_key == self._selected.session_key
++            and target.subagent_id == self._selected.subagent_id
++        then
++            target_line = line
++            break
++        end
++    end
++    vim.api.nvim_win_set_cursor(list_winid, { target_line, 0 })
++    if preview_view then
++        vim.api.nvim_win_call(preview_winid, function()
++            vim.fn.winrestview(preview_view)
++        end)
++    else
++        vim.api.nvim_win_set_cursor(preview_winid, { 1, 0 })
++    end
++end
++
++function SessionHud:_move(delta)
++    local list_winid = self._list_winid
++    if not BufHelpers.is_win_usable(list_winid) then
++        return
++    end
++    --- @cast list_winid integer
++    local rows = {}
++    for row in pairs(self._targets) do
++        rows[#rows + 1] = row
++    end
++    table.sort(rows)
++    if #rows == 0 then
++        return
++    end
++    local current = vim.api.nvim_win_get_cursor(list_winid)[1]
++    local index = 1
++    for candidate, row in ipairs(rows) do
++        if row == current then
++            index = candidate
++        end
++    end
++    index = (index - 1 + delta) % #rows + 1
++    vim.api.nvim_win_set_cursor(list_winid, { rows[index], 0 })
++    self._selected = self._targets[rows[index]]
++    self:_render(true)
++end
++
++function SessionHud:_activate()
++    local list_winid = self._list_winid
++    if not BufHelpers.is_win_usable(list_winid) then
++        return
++    end
++    --- @cast list_winid integer
++    local target = self._targets[vim.api.nvim_win_get_cursor(list_winid)[1]]
++    if not target then
++        return
++    end
++    self._selected = target
++    if target.kind == "subagent" then
++        self:_render(true)
++        return
++    end
++    local key = target.session_key
++    self:close()
++    require("agentic.session_registry").show_session(key)
++end
++
++function SessionHud:_destroy_selected()
++    local list_winid = self._list_winid
++    if not BufHelpers.is_win_usable(list_winid) then
++        return
++    end
++    --- @cast list_winid integer
++    local target = self._targets[vim.api.nvim_win_get_cursor(list_winid)[1]]
++    if not target then
++        return
++    end
++    if target.kind ~= "session" then
++        Logger.notify(
++            "Select a top-level session to destroy",
++            vim.log.levels.INFO
++        )
++        return
++    end
++
++    local registry = require("agentic.session_registry")
++    local key = target.session_key
++    local session = registry.get(key)
++    if not session then
++        return
++    end
++    local title = session.chat_history.title ~= ""
++            and single_line(session.chat_history.title)
++        or "Untitled"
++    local epoch = self._epoch
++
++    vim.ui.select({ KEEP_SESSION, DESTROY_SESSION }, {
++        prompt = string.format(
++            'Destroy session "%s" (#%d)? Active work will be cancelled:',
++            title,
++            key
++        ),
++    }, function(choice)
++        if
++            choice ~= DESTROY_SESSION
++            or epoch ~= self._epoch
++            or not self:is_open()
++            or registry.get(key) ~= session
++        then
++            return
++        end
++
++        if key == self._source.session_key then
++            self:close()
++            registry.destroy(key)
++            return
++        end
++
++        registry.destroy(key)
++        local sessions = registry.list()
++        table.sort(sessions, function(left, right)
++            return left.session_key < right.session_key
++        end)
++        local selected = sessions[#sessions]
++        for _, candidate in ipairs(sessions) do
++            if candidate.session_key > key then
++                selected = candidate
++                break
++            end
++        end
++        self._selected = selected
++                and {
++                    kind = "session",
++                    session_key = selected.session_key,
++                }
++            or nil
++        self:_render(true)
++    end)
++end
++
++function SessionHud:_rename_selected()
++    local list_winid = self._list_winid
++    if not BufHelpers.is_win_usable(list_winid) then
++        return
++    end
++    --- @cast list_winid integer
++    local target = self._targets[vim.api.nvim_win_get_cursor(list_winid)[1]]
++    if not target then
++        return
++    end
++    if target.kind ~= "session" then
++        Logger.notify(
++            "Select a top-level session to rename",
++            vim.log.levels.INFO
++        )
++        return
++    end
++
++    local registry = require("agentic.session_registry")
++    local session = registry.get(target.session_key)
++    if not session then
++        return
++    end
++    local epoch = self._epoch
++    vim.ui.input({
++        prompt = string.format("Rename session #%d: ", target.session_key),
++        default = session.chat_history.title,
++    }, function(title)
++        if
++            title == nil
++            or epoch ~= self._epoch
++            or not self:is_open()
++            or registry.get(target.session_key) ~= session
++        then
++            return
++        end
++        if not session:rename(title) then
++            Logger.notify(
++                "Session rename was not submitted; finish or cancel its active work first",
++                vim.log.levels.WARN
++            )
++        end
++    end)
++end
++
++function SessionHud:_schedule_refresh()
++    self._epoch = self._epoch + 1
++    local epoch = self._epoch
++    local function refresh()
++        if epoch ~= self._epoch or not self._list_winid then
++            return
++        end
++        if
++            not BufHelpers.is_win_usable(self._list_winid)
++            or not BufHelpers.is_win_usable(self._preview_winid)
++        then
++            self:close()
++            return
++        end
++        if not self._source.widget:get_visible_tab_id() then
++            self:close()
++            return
++        end
++        self:_render()
++        vim.defer_fn(refresh, 300)
++    end
++    vim.defer_fn(refresh, 300)
++end
++
++function SessionHud:open()
++    local anchor = self._source.widget.win_nrs.input
++        or self._source.widget.win_nrs.chat
++    if not BufHelpers.is_win_usable(anchor) then
++        return
++    end
++    --- @cast anchor integer
++    local pos = vim.api.nvim_win_get_position(anchor)
++    local anchor_height = vim.api.nvim_win_get_height(anchor)
++    local bottom = pos[1] + anchor_height
++    local outer_height = math.min(
++        math.max(anchor_height, math.floor(vim.o.lines * 0.6)),
++        math.max(6, bottom - 1)
++    )
++    local content_height = math.max(2, outer_height - 4)
++    local list_lines = SessionHud.build_sections(
++        require("agentic.session_registry").list(),
++        self._selected
++    )
++    local list_height = math.min(
++        #list_lines,
++        math.max(1, content_height - math.min(4, content_height - 1))
++    )
++    local preview_height = math.max(1, content_height - list_height)
++    local width = math.max(1, vim.api.nvim_win_get_width(anchor) - 2)
++    local top = math.max(0, bottom - outer_height)
++    self._list_bufnr = create_buffer("agentic-hud-list")
++    self._preview_bufnr = create_buffer("agentic-hud-preview")
++    self._list_winid = vim.api.nvim_open_win(self._list_bufnr, true, {
++        relative = "editor",
++        row = top,
++        col = pos[2],
++        width = width,
++        height = list_height,
++        style = "minimal",
++        border = "rounded",
++        title = " Agent HUD ",
++        title_pos = "center",
++    })
++    self._preview_winid = vim.api.nvim_open_win(self._preview_bufnr, false, {
++        relative = "editor",
++        row = top + list_height + 2,
++        col = pos[2],
++        width = width,
++        height = preview_height,
++        style = "minimal",
++        border = "rounded",
++        title = " Activity ",
++        title_pos = "center",
++    })
++    vim.cmd("stopinsert")
++    vim.wo[self._list_winid][0].cursorline = true
++    vim.wo[self._list_winid][0].wrap = false
++    vim.wo[self._preview_winid][0].wrap = false
++    BufHelpers.keymap_set(self._list_bufnr, "n", "q", function()
++        self:close()
++    end)
++    BufHelpers.keymap_set(self._list_bufnr, "n", "<Esc>", function()
++        self:close()
++    end)
++    BufHelpers.keymap_set(self._list_bufnr, "n", "<CR>", function()
++        self:_activate()
++    end)
++    BufHelpers.keymap_set(self._list_bufnr, "n", "j", function()
++        self:_move(1)
++    end)
++    BufHelpers.keymap_set(self._list_bufnr, "n", "k", function()
++        self:_move(-1)
++    end)
++    BufHelpers.keymap_set(self._list_bufnr, "n", "r", function()
++        self:_render()
++    end)
++    BufHelpers.keymap_set(self._list_bufnr, "n", "D", function()
++        self:_destroy_selected()
++    end)
++    for _, key in ipairs({ "e", "R" }) do
++        BufHelpers.keymap_set(self._list_bufnr, "n", key, function()
++            self:_rename_selected()
++        end)
++    end
++    BufHelpers.keymap_set(self._list_bufnr, "n", "<Tab>", function()
++        local preview_winid = self._preview_winid
++        if BufHelpers.is_win_usable(preview_winid) then
++            --- @cast preview_winid integer
++            vim.api.nvim_set_current_win(preview_winid)
++        end
++    end)
++    for _, key in ipairs({ "q", "<Esc>" }) do
++        BufHelpers.keymap_set(self._preview_bufnr, "n", key, function()
++            self:close()
++        end)
++    end
++    BufHelpers.keymap_set(self._preview_bufnr, "n", "<Tab>", function()
++        local list_winid = self._list_winid
++        if BufHelpers.is_win_usable(list_winid) then
++            --- @cast list_winid integer
++            vim.api.nvim_set_current_win(list_winid)
++        end
++    end)
++    BufHelpers.keymap_set(self._preview_bufnr, "n", "r", function()
++        self:_render()
++    end)
++    self:_render(true)
++    self:_schedule_refresh()
++end
++
++function SessionHud:close()
++    self._epoch = self._epoch + 1
++    local winids = { self._preview_winid, self._list_winid }
++    self._list_winid, self._list_bufnr = nil, nil
++    self._preview_winid, self._preview_bufnr = nil, nil
++    for _, winid in ipairs(winids) do
++        if BufHelpers.is_win_usable(winid) then
++            --- @cast winid integer
++            vim.api.nvim_win_close(winid, true)
++        end
++    end
++end
++
++--- @return boolean open
++function SessionHud:is_open()
++    return BufHelpers.is_win_usable(self._list_winid)
++        or BufHelpers.is_win_usable(self._preview_winid)
++end
++
++return SessionHud
+diff --git a/lua/agentic/ui/session_hud.test.lua b/lua/agentic/ui/session_hud.test.lua
+new file mode 100644
+index 0000000..1fa27be
+--- /dev/null
++++ b/lua/agentic/ui/session_hud.test.lua
+@@ -0,0 +1,400 @@
++--- @diagnostic disable: missing-fields, assign-type-mismatch
++local assert = require("tests.helpers.assert")
++local spy = require("tests.helpers.spy")
++local SessionHud = require("agentic.ui.session_hud")
++
++describe("agentic.ui.SessionHud", function()
++    local open_hud
++    local registry_destroy_stub
++    local registry_get_stub
++    local registry_list_stub
++    local original_ui_select
++    local original_ui_input
++
++    after_each(function()
++        if open_hud then
++            open_hud:close()
++            open_hud = nil
++        end
++        if registry_list_stub then
++            registry_list_stub:revert()
++            registry_list_stub = nil
++        end
++        if registry_destroy_stub then
++            registry_destroy_stub:revert()
++            registry_destroy_stub = nil
++        end
++        if registry_get_stub then
++            registry_get_stub:revert()
++            registry_get_stub = nil
++        end
++        if original_ui_select then
++            vim.ui.select = original_ui_select
++            original_ui_select = nil
++        end
++        if original_ui_input then
++            vim.ui.input = original_ui_input
++            original_ui_input = nil
++        end
++    end)
++
++    local function session(key, status, children)
++        return {
++            session_key = key,
++            session_id = "root-" .. key,
++            chat_history = { title = "Session " .. key, messages = {} },
++            provider_name = "codex-acp",
++            get_navigation_status = function()
++                return status
++            end,
++            subagents = {
++                list = function()
++                    return children or {}
++                end,
++            },
++        }
++    end
++
++    it(
++        "renders sessions and nested subagents with stable row targets",
++        function()
++            local sessions = {
++                session(2, "idle"),
++                session(1, "working", {
++                    {
++                        session_id = "child-1",
++                        parent_session_id = "root-1",
++                        name = "researcher",
++                        task = "Inspect tests",
++                        state = "running",
++                        messages = {},
++                    },
++                    {
++                        session_id = "child-2",
++                        parent_session_id = "child-1",
++                        name = "reviewer",
++                        task = "Review result",
++                        state = "completed",
++                        messages = {},
++                    },
++                }),
++            }
++
++            local lines, targets = SessionHud.build_content(sessions, {
++                kind = "subagent",
++                session_key = 1,
++                subagent_id = "child-1",
++            })
++
++            assert.equal("● [working] Session 1", lines[4])
++            assert.equal(
++                "  └─ ● [running] researcher — Inspect tests",
++                lines[5]
++            )
++            assert.equal(
++                "     └─ ✓ [completed] reviewer — Review result",
++                lines[6]
++            )
++            assert.equal("○ [idle] Session 2", lines[7])
++            assert.equal(1, targets[4].session_key)
++            assert.equal("child-1", targets[5].subagent_id)
++        end
++    )
++
++    it("shows the selected child output in the preview", function()
++        local child = {
++            session_id = "child",
++            parent_session_id = "root-1",
++            name = "worker",
++            task = "Run checks",
++            state = "running",
++            messages = {
++                { type = "agent", text = "First line\nSecond line" },
++                {
++                    type = "tool_call",
++                    kind = "execute",
++                    argument = "make test",
++                    status = "completed",
++                    body = { "all green" },
++                },
++            },
++        }
++        local lines = SessionHud.build_content({
++            session(1, "working", { child }),
++        }, {
++            kind = "subagent",
++            session_key = 1,
++            subagent_id = "child",
++        })
++
++        local rendered = table.concat(lines, "\n")
++        assert.truthy(rendered:find("Subagent: worker", 1, true))
++        assert.truthy(rendered:find("First line\nSecond line", 1, true))
++        assert.truthy(rendered:find("execute: make test [completed]", 1, true))
++        assert.truthy(rendered:find("all green", 1, true))
++    end)
++
++    it("does not return buffer lines containing embedded newlines", function()
++        local child = {
++            session_id = "child",
++            parent_session_id = "root-1",
++            name = "worker\r\nreviewer",
++            task = "Inspect tests\rand report",
++            state = "running",
++            messages = {
++                {
++                    type = "plan",
++                    entries = {
++                        {
++                            status = "in_progress",
++                            content = "Run focused tests\nRun validation",
++                        },
++                    },
++                },
++                {
++                    type = "tool_call",
++                    kind = "execute",
++                    argument = "make test\nmake validate",
++                    status = "completed",
++                    body = { "focused checks\nvalidation passed" },
++                },
++            },
++        }
++        local sessions = { session(1, "working", { child }) }
++        sessions[1].chat_history.title = "Session\r\nOne"
++
++        local lines = SessionHud.build_content(sessions, {
++            kind = "subagent",
++            session_key = 1,
++            subagent_id = "child",
++        })
++
++        for _, line in ipairs(lines) do
++            assert.is_nil(line:find("\n", 1, true))
++            assert.is_nil(line:find("\r", 1, true))
++        end
++
++        local rendered = table.concat(lines, "\n")
++        assert.truthy(rendered:find("Session One", 1, true))
++        assert.truthy(rendered:find("worker reviewer", 1, true))
++        assert.truthy(rendered:find("Inspect tests and report", 1, true))
++        assert.truthy(
++            rendered:find(
++                "[in_progress] Run focused tests Run validation",
++                1,
++                true
++            )
++        )
++        assert.truthy(
++            rendered:find(
++                "execute: make test make validate [completed]",
++                1,
++                true
++            )
++        )
++        assert.truthy(
++            rendered:find("focused checks\n  validation passed", 1, true)
++        )
++
++        local bufnr = vim.api.nvim_create_buf(false, true)
++        assert.has_no_errors(function()
++            vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
++        end)
++        vim.api.nvim_buf_delete(bufnr, { force = true })
++    end)
++
++    it("keeps the session list fixed while the preview scrolls", function()
++        local messages = {}
++        for index = 1, 80 do
++            messages[#messages + 1] = {
++                type = "agent",
++                text = "output line " .. index,
++            }
++        end
++
++        local source = session(1, "working")
++        source.chat_history.messages = messages
++        source.widget = {
++            win_nrs = { input = vim.api.nvim_get_current_win() },
++            get_visible_tab_id = function()
++                return vim.api.nvim_get_current_tabpage()
++            end,
++        }
++        registry_list_stub =
++            spy.stub(require("agentic.session_registry"), "list")
++        registry_list_stub:returns({ source })
++
++        open_hud = SessionHud:new(source --[[@as agentic.SessionManager]])
++        open_hud:open()
++
++        local list_win
++        local preview_win
++        for _, winid in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
++            local bufnr = vim.api.nvim_win_get_buf(winid)
++            local filetype = vim.bo[bufnr].filetype
++            if filetype == "agentic-hud-list" then
++                list_win = winid
++            elseif filetype == "agentic-hud-preview" then
++                preview_win = winid
++            end
++        end
++
++        assert.is_not_nil(list_win)
++        assert.is_not_nil(preview_win)
++        --- @cast list_win integer
++        --- @cast preview_win integer
++        local list_view = vim.api.nvim_win_call(list_win, vim.fn.winsaveview)
++        vim.api.nvim_win_set_cursor(preview_win, { #messages + 3, 0 })
++        vim.api.nvim_win_call(preview_win, function()
++            vim.cmd("normal! zb")
++        end)
++        local preview_view =
++            vim.api.nvim_win_call(preview_win, vim.fn.winsaveview)
++        --- @diagnostic disable-next-line: invisible
++        open_hud:_render()
++        local refreshed_preview_view =
++            vim.api.nvim_win_call(preview_win, vim.fn.winsaveview)
++
++        assert.equal(1, list_view.topline)
++        assert.is_true(preview_view.topline > 1)
++        assert.equal(preview_view.topline, refreshed_preview_view.topline)
++        assert.is_true(
++            vim.api.nvim_win_get_position(list_win)[1]
++                < vim.api.nvim_win_get_position(preview_win)[1]
++        )
++    end)
++
++    it("uses only Tab to switch between HUD panes", function()
++        local source = session(1, "working")
++        source.widget = {
++            win_nrs = { input = vim.api.nvim_get_current_win() },
++            get_visible_tab_id = function()
++                return vim.api.nvim_get_current_tabpage()
++            end,
++        }
++        registry_list_stub =
++            spy.stub(require("agentic.session_registry"), "list")
++        registry_list_stub:returns({ source })
++
++        open_hud = SessionHud:new(source --[[@as agentic.SessionManager]])
++        open_hud:open()
++
++        local mapped = {
++            ["agentic-hud-list"] = {},
++            ["agentic-hud-preview"] = {},
++        }
++        for _, winid in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
++            local bufnr = vim.api.nvim_win_get_buf(winid)
++            local filetype = vim.bo[bufnr].filetype
++            if mapped[filetype] then
++                for _, keymap in ipairs(vim.api.nvim_buf_get_keymap(bufnr, "n")) do
++                    mapped[filetype][keymap.lhs] = true
++                end
++            end
++        end
++
++        assert.is_true(mapped["agentic-hud-list"]["<Tab>"])
++        assert.is_true(mapped["agentic-hud-preview"]["<Tab>"])
++        assert.is_nil(mapped["agentic-hud-list"].l)
++        assert.is_nil(mapped["agentic-hud-preview"].h)
++    end)
++
++    it("kills the selected top-level session with D", function()
++        local sessions = { session(1, "idle"), session(2, "working") }
++        sessions[1].widget = {
++            win_nrs = { input = vim.api.nvim_get_current_win() },
++            get_visible_tab_id = function()
++                return vim.api.nvim_get_current_tabpage()
++            end,
++        }
++        local registry = require("agentic.session_registry")
++        registry_list_stub = spy.stub(registry, "list")
++        registry_list_stub:invokes(function()
++            return sessions
++        end)
++        registry_destroy_stub = spy.stub(registry, "destroy")
++        registry_destroy_stub:invokes(function(session_key)
++            for index, item in ipairs(sessions) do
++                if item.session_key == session_key then
++                    table.remove(sessions, index)
++                    return
++                end
++            end
++        end)
++        registry_get_stub = spy.stub(registry, "get")
++        registry_get_stub:invokes(function(session_key)
++            for _, item in ipairs(sessions) do
++                if item.session_key == session_key then
++                    return item
++                end
++            end
++        end)
++        local confirm
++        original_ui_select = vim.ui.select
++        vim.ui.select = function(items, opts, on_choice)
++            assert.equal("Keep session", items[1])
++            assert.equal("Destroy session", items[2])
++            assert.truthy(opts.prompt:find("Session 2", 1, true))
++            confirm = on_choice
++        end
++
++        open_hud = SessionHud:new(sessions[1] --[[@as agentic.SessionManager]])
++        open_hud:open()
++        vim.cmd("normal j")
++        pcall(vim.cmd, "normal D")
++
++        assert.stub(registry_destroy_stub).was.called(0)
++        assert.is_not_nil(confirm)
++        confirm("Keep session")
++        assert.stub(registry_destroy_stub).was.called(0)
++        pcall(vim.cmd, "normal D")
++        confirm("Destroy session")
++        assert.stub(registry_destroy_stub).was.called_with(2)
++        local list_bufnr
++        for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
++            if vim.bo[bufnr].filetype == "agentic-hud-list" then
++                list_bufnr = bufnr
++                break
++            end
++        end
++        assert.is_not_nil(list_bufnr)
++        --- @cast list_bufnr integer
++        local rendered = table.concat(
++            vim.api.nvim_buf_get_lines(list_bufnr, 0, -1, false),
++            "\n"
++        )
++        assert.is_nil(rendered:find("Session 2", 1, true))
++    end)
++
++    it("renames the selected top-level session through the provider", function()
++        local source = session(1, "idle")
++        local rename_spy = spy.new(function()
++            return true
++        end)
++        source.rename = rename_spy
++        source.widget = {
++            win_nrs = { input = vim.api.nvim_get_current_win() },
++            get_visible_tab_id = function()
++                return vim.api.nvim_get_current_tabpage()
++            end,
++        }
++        local registry = require("agentic.session_registry")
++        registry_list_stub = spy.stub(registry, "list")
++        registry_list_stub:returns({ source })
++        registry_get_stub = spy.stub(registry, "get")
++        registry_get_stub:returns(source)
++        original_ui_input = vim.ui.input
++        vim.ui.input = function(opts, on_confirm)
++            assert.equal("Rename session #1: ", opts.prompt)
++            assert.equal("Session 1", opts.default)
++            on_confirm("Provider title")
++        end
++
++        open_hud = SessionHud:new(source --[[@as agentic.SessionManager]])
++        open_hud:open()
++        pcall(vim.cmd, "normal R")
++
++        assert.spy(rename_spy).was.called_with(source, "Provider title")
++        assert.equal("Session 1", source.chat_history.title)
++    end)
++end)
+diff --git a/tests/integration/test_multi_session.lua b/tests/integration/test_multi_session.lua
+index 70360e4..47f0a31 100644
+--- a/tests/integration/test_multi_session.lua
++++ b/tests/integration/test_multi_session.lua
+@@ -543,35 +543,28 @@ end)()
+         assert.same({ 2, 3, 1 }, seen)
+     end)
+ 
+-    it("opens the session chosen in the picker", function()
++    it("opens the session chosen in the Agent HUD", function()
+         create_sessions(2)
+         child.lua([[ require("agentic.session_registry").show_session(1) ]])
+         child.flush()
+ 
+-        child.lua([[
+-            _G.labels = {}
+-            vim.ui.select = function(items, opts, on_choice)
+-                for _, item in ipairs(items) do
+-                    _G.labels[#_G.labels + 1] = opts.format_item(item)
+-                end
+-                for _, item in ipairs(items) do
+-                    if item.session_key == 2 then
+-                        on_choice(item)
+-                        return
+-                    end
+-                end
+-            end
+-            require("agentic").select_session()
+-        ]])
++        child.lua([[ require("agentic").select_session() ]])
+         child.flush()
+ 
+-        assert.equal(2, visible_key())
++        assert.equal("agentic-hud-list", child.bo.filetype)
++        local lines = child.api.nvim_buf_get_lines(0, 0, 6, false)
++        assert.truthy(lines[4]:find("Untitled (1)", 1, true))
++        assert.truthy(lines[5]:find("Untitled (2)", 1, true))
+ 
+-        -- `list()` puts this tab's visible session first; only it gets the marker.
+-        local labels = child.lua_get([[_G.labels]])
+-        assert.equal(2, #labels)
+-        assert.truthy(labels[1]:match("^● "))
+-        assert.truthy(labels[2]:match("^  "))
++        child.type_keys("<Tab>")
++        assert.equal("agentic-hud-preview", child.bo.filetype)
++        child.type_keys("<Tab>")
++        assert.equal("agentic-hud-list", child.bo.filetype)
++
++        child.type_keys("j", "<CR>")
++        child.flush()
++
++        assert.equal(2, visible_key())
+     end)
+ 
+     it("destroys the resolved session and keeps the others", function()

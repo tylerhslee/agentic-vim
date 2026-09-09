@@ -20,6 +20,10 @@ secrets.json
 # Logs
 *.log
 .nvimlog
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 
 # Editor temporary files
 *.swp
@@ -43,6 +47,11 @@ __pycache__/
 .ruff_cache/
 .coverage
 htmlcov/
+
+# Local dependency/install output
+/provider/node_modules/
+.direnv/
+.envrc
 
 # Operating-system metadata
 .DS_Store
