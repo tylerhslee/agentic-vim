@@ -16,7 +16,7 @@ vim.opt.packpath = table.concat({
 }, ",")
 
 -- Provider binaries are installed in Neovim's portable data directory.
-local provider_bin = vim.fn.stdpath("data") .. "/nvim/agentic-vim/bin"
+local provider_bin = vim.fn.stdpath("data") .. "/agentic-vim/bin"
 
 -- Show live ChatGPT Codex quota windows without reading or storing auth data.
 require("codex_usage").setup({ command = provider_bin .. "/codex" })

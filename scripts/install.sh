@@ -477,6 +477,7 @@ PATH="$BIN_HOME:$MANAGED_BIN:$NODE_INSTALL/bin:$PATH" \
   "$MANAGED_BIN/nvim" --headless -i NONE \
   "+lua assert(vim.fn.has('nvim-0.12') == 1)" \
   "+lua require('agentic'); require('neo-tree'); require('snacks'); require('render-markdown'); require('codex_usage'); require('routine_jobs')" \
+  "+lua local c = require('agentic.config'); local p = c.acp_providers[c.provider].command; if vim.fn.executable(p) ~= 1 then print('Configured ACP provider is not executable: ' .. p); vim.cmd('cquit 1') end" \
   +qa
 
 say ""
