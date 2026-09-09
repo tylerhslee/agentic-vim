@@ -1,0 +1,50 @@
+# Personal vault (authoritative locally and mirrored separately)
+/LeeHaRin/
+
+# Secrets and machine-local environment
+.env
+.env.*
+!.env.example
+!.env.sample
+*.key
+*.pem
+*.p12
+*.pfx
+credentials.json
+secrets.json
+
+# Replaceable agent/runtime state
+/.agentic/
+/.codex/
+
+# Logs
+*.log
+.nvimlog
+
+# Editor temporary files
+*.swp
+*.swo
+*.swn
+*~
+Session.vim
+shada/
+*.shada
+
+# Obsidian device-local state
+**/.obsidian/workspace*.json
+**/.obsidian/cache/
+**/.obsidian/.trash/
+
+# Python caches and test output
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Operating-system metadata
+.DS_Store
+Thumbs.db
+Desktop.ini
