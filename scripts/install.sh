@@ -463,22 +463,21 @@ case "${SHELL:-}" in
     ;;
 esac
 
+VERIFY_PARSERS=""
 if ((!SKIP_PARSERS)); then
-  say "Installing Tree-sitter parsers..."
-  PARSER_LUA="require('nvim-treesitter').install(vim.split('$PARSERS', ' ')):wait(300000)"
-  PATH="$BIN_HOME:$MANAGED_BIN:$NODE_INSTALL/bin:$PATH" \
-    XDG_CACHE_HOME="$TMP_DIR/cache" NVIM_CODEX_USAGE_DISABLED=1 \
-    "$MANAGED_BIN/nvim" --headless -i NONE \
-    "+lua $PARSER_LUA" +qa
+  say "Installing and verifying Tree-sitter parsers..."
+  VERIFY_PARSERS="$PARSERS"
 fi
-
+say "Verifying Neovim startup and provider configuration..."
 PATH="$BIN_HOME:$MANAGED_BIN:$NODE_INSTALL/bin:$PATH" \
-  XDG_CACHE_HOME="$TMP_DIR/cache" NVIM_CODEX_USAGE_DISABLED=1 \
+  XDG_CACHE_HOME="$TMP_DIR/cache" XDG_STATE_HOME="$TMP_DIR/state" NVIM_CODEX_USAGE_DISABLED=1 \
+  NVIM_LOG_FILE="$TMP_DIR/nvim.log" \
+  AGENTIC_VIM_PARSERS="$VERIFY_PARSERS" \
+  AGENTIC_VIM_CHECK_SCRIPT="$ROOT/scripts/nvim-install-check.lua" \
+  AGENTIC_VIM_CHECK_MARKER="$TMP_DIR/nvim-verified" \
   "$MANAGED_BIN/nvim" --headless -i NONE \
-  "+lua assert(vim.fn.has('nvim-0.12') == 1)" \
-  "+lua require('agentic'); require('neo-tree'); require('snacks'); require('render-markdown'); require('codex_usage'); require('routine_jobs')" \
-  "+lua local c = require('agentic.config'); local p = c.acp_providers[c.provider].command; if vim.fn.executable(p) ~= 1 then print('Configured ACP provider is not executable: ' .. p); vim.cmd('cquit 1') end" \
-  +qa
+  '+lua dofile(vim.env.AGENTIC_VIM_CHECK_SCRIPT)' +qa
+[[ -f "$TMP_DIR/nvim-verified" ]] || die "Neovim verification did not complete"
 
 say ""
 say "Agentic Vim is installed."

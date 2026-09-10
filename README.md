@@ -12,6 +12,11 @@ The installer supports macOS and Linux on Apple Silicon/ARM64 and x86-64. It
 downloads verified, pinned builds of Neovim 0.12.5 and Node.js 22.22.2, installs
 the exact plugin and provider versions, compiles Tree-sitter parsers locally,
 and links this repository's `nvim/` directory as your Neovim configuration.
+It also installs JetBrainsMono Nerd Font for your user account.
+
+The user's preference is to use the operating system's terminal. Keep this
+setup independent of terminal emulators: do not install one or manage its
+profile. Approximate Macchiato colors across platforms are acceptable.
 
 Prerequisites are Git, curl, tar, and a C compiler. On a new Mac, install the
 Command Line Tools first:
@@ -54,10 +59,19 @@ so use this setup only on a machine and in repositories you trust. To restore a
 replaced configuration, move the desired item out of the timestamped backup
 directory and back to its original path.
 
-The installer also adds `~/.local/bin` to `.zshrc` or `.bashrc` when necessary
-and installs the same JetBrainsMono Nerd Font for your user account. Select that
-font in your terminal profile to reproduce the icons and typography; terminal
-font selection cannot be controlled by Neovim.
+The installer also adds `~/.local/bin` to `.zshrc` or `.bashrc` when necessary.
+Run `nvim` in your operating system's terminal; file arguments work as usual:
+`nvim README.md`. Select **JetBrainsMono Nerd Font Mono** at **14pt** in the
+terminal's font settings, with two pixels of extra line spacing if supported.
+Installing a font does not select it in an existing terminal window; Neovim's
+`guifont` only affects graphical clients.
+
+Neovim detects terminal color support and uses the Macchiato theme, with a
+matching 256-color fallback when RGB colors are unavailable. Color fidelity
+depends on the terminal, so approximate colors are expected. For
+matching space outside the Neovim editor, set your terminal profile's background
+to `#202334` and foreground to `#bdc6e5`. Profile settings remain under your
+control.
 
 ### What is pinned
 
@@ -80,6 +94,47 @@ The editor experience and keymaps are shared across macOS, Linux, and WSL. The
 Routine Jobs pane only exposes the LeeHaRin mirror when its systemd units exist;
 on a normal Linux or macOS laptop it opens with no configured jobs. The personal
 vault and WSL mirror services are intentionally outside this repository.
+
+For SSH or WSL, select the font on the host that actually displays Neovim. When
+using Windows Terminal with WSL, install JetBrainsMono Nerd Font separately on
+Windows and select its Mono family in the Windows Terminal profile. Installing
+the font inside Linux does not install it on the Windows host. WSLg is not
+required to run terminal Neovim.
+
+## Cursor subscription integration
+
+Cursor is available as an optional Agentic provider; Codex remains the default.
+Install the official Cursor CLI on each machine, then sign in with the Cursor
+account whose subscription you want to use:
+
+```bash
+curl -fsSL https://cursor.com/install -o /tmp/cursor-install.sh
+bash /tmp/cursor-install.sh
+~/.local/bin/cursor-agent login
+~/.local/bin/cursor-agent status
+```
+
+Restart Neovim, open Agentic with `Space aa`, and use `,l` inside Agentic
+(or `Space l` from the editor) to select **Cursor Agent ACP**. Use `,m` to
+select an available model. Use the same provider picker to return to Codex.
+Provider switching carries over the current conversation; start a new session
+with `Space an` if you want a fresh conversation. The existing quota display
+continues to show Codex usage, not Cursor usage.
+
+The configuration launches `~/.local/bin/cursor-agent acp` directly, so it
+also works when Neovim's inherited PATH does not include `~/.local/bin`.
+The Cursor CLI is optional and maintained by Cursor's installer/updater, not
+pinned by this repository's main installer. Update it with
+`~/.local/bin/cursor-agent update`.
+
+Browser sign-in uses your Cursor account; applicable plan allowances and
+usage charges still apply. No Cursor credentials belong in this repository.
+This integration provides agent chat and tool-based edits, not Cursor Tab
+inline autocomplete. To disconnect the account, run
+`~/.local/bin/cursor-agent logout`.
+
+See [Cursor ACP](https://cursor.com/docs/cli/acp) and
+[Cursor plans](https://cursor.com/help/account-and-billing/pricing).
 
 ## Neovim IDE quick reference
 
@@ -121,6 +176,9 @@ Inside Neo-tree, use `j`/`k` to move, `l` or `Enter` to open, `h` to collapse,
 and ignored items, and `q` to close. Those items are visible by default. Press
 `?` there for the complete command list. The source tabs at the top switch
 among files, open buffers, and Git status; `<` and `>` move between them.
+The tree stays 34 columns wide and wraps long filenames onto indented continuation
+lines, with spacing before status markers. `!` means unstaged changes; `?` means
+an untracked file. `j`/`k` still move between entries, including wrapped entries.
 
 In Neo-tree's **Buffers** source, the entries are files currently loaded in
 Neovim, grouped by directory. `#7` is buffer number 7, `[+]` means the buffer

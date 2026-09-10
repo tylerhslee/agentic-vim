@@ -2,7 +2,8 @@
 vim.g.mapleader = " "
 vim.g.maplocalleader = ","
 vim.opt.number = true
-vim.opt.termguicolors = true
+-- Let Neovim detect the terminal's RGB support instead of forcing it.
+require("terminal_colors").setup()
 vim.opt.mouse = "a"
 vim.opt.updatetime = 250
 vim.opt.cursorline = true
@@ -115,9 +116,41 @@ vim.cmd("packadd nui.nvim")
 vim.cmd("packadd nvim-web-devicons")
 vim.cmd("packadd neo-tree.nvim")
 require("nvim-web-devicons").setup({})
+local tree_width = 34
 require("neo-tree").setup({
   close_if_last_window = true,
   popup_border_style = "rounded",
+  default_component_configs = {
+    name = { right_padding = 2 },
+    git_status = { symbols = { unstaged = "!" } },
+  },
+  -- Render full lines without Neo-tree's truncating, right-aligned container.
+  -- Neovim can then wrap names and their trailing status into the fixed sidebar.
+  renderers = {
+    directory = {
+      { "indent" }, { "icon" }, { "current_filter" }, { "name" },
+      { "symlink_target" }, { "clipboard" },
+      { "diagnostics", errors_only = true, hide_when_expanded = true },
+      { "git_status", hide_when_expanded = true },
+    },
+    file = {
+      { "indent" }, { "icon" }, { "name" }, { "symlink_target" },
+      { "clipboard" }, { "bufnr" }, { "modified" },
+      { "diagnostics" }, { "git_status" },
+    },
+  },
+  event_handlers = {
+    {
+      event = "neo_tree_window_after_open",
+      handler = function(args)
+        local win = args.winid
+        vim.wo[win].wrap = true
+        vim.wo[win].linebreak = true
+        vim.wo[win].breakindent = true
+        vim.wo[win].breakindentopt = "shift:2"
+      end,
+    },
+  },
   source_selector = {
     winbar = true,
     statusline = false,
@@ -129,7 +162,8 @@ require("neo-tree").setup({
   },
   window = {
     position = "left",
-    width = 34,
+    width = tree_width,
+    auto_expand_width = false,
     mappings = {
       ["h"] = "close_node",
       ["l"] = "open",
@@ -146,6 +180,27 @@ require("neo-tree").setup({
     group_empty_dirs = true,
     use_libuv_file_watcher = true,
   },
+})
+
+-- Keep the sidebar fixed even when another pane explicitly resizes windows.
+local tree_width_group = vim.api.nvim_create_augroup("FixedTreeWidth", { clear = true })
+vim.api.nvim_create_autocmd({ "BufWinEnter", "WinResized", "VimResized" }, {
+  group = tree_width_group,
+  callback = function()
+    vim.schedule(function()
+      for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+        local buf = vim.api.nvim_win_get_buf(win)
+        local position = vim.b[buf].neo_tree_position
+        if vim.bo[buf].filetype == "neo-tree"
+            and (position == "left" or position == "right") then
+          vim.wo[win].winfixwidth = true
+          if vim.api.nvim_win_get_width(win) ~= tree_width then
+            vim.api.nvim_win_set_width(win, tree_width)
+          end
+        end
+      end
+    end)
+  end,
 })
 
 vim.keymap.set("n", "<leader>e", "<Cmd>Neotree filesystem toggle reveal left<CR>",
@@ -194,6 +249,11 @@ require("agentic").setup({
   acp_providers = {
     ["codex-acp"] = {
       command = provider_bin .. "/codex-acp",
+    },
+    ["cursor-acp"] = {
+      -- Cursor's official installer owns this CLI and its account login.
+      command = vim.fn.expand("~/.local/bin/cursor-agent"),
+      args = { "acp" },
     },
   },
 })
