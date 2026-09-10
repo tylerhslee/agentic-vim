@@ -1,6 +1,3 @@
-# Personal vault (authoritative locally and mirrored separately)
-/LeeHaRin/
-
 # Secrets and machine-local environment
 .env
 .env.*
@@ -33,11 +30,6 @@ pnpm-debug.log*
 Session.vim
 shada/
 *.shada
-
-# Obsidian device-local state
-**/.obsidian/workspace*.json
-**/.obsidian/cache/
-**/.obsidian/.trash/
 
 # Python caches and test output
 __pycache__/

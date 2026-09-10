@@ -35,6 +35,7 @@ for mode in notermguicolors termguicolors; do
   rgb=0
   [[ "$mode" != termguicolors ]] || rgb=1
   EXPECT_RGB="$rgb" "${NVIM:-nvim}" --headless -i NONE -u "$ROOT/nvim/init.lua" \
+    --cmd "set runtimepath^=$ROOT/nvim" \
     --cmd "set $mode" '+lua dofile(vim.env.AGENTIC_COLOR_TEST)' +qa
   printf 'PASS: %s palette, styles, links, and reload\n' "$mode"
 done
@@ -74,7 +75,8 @@ for color, override, expected in cases:
     if result.exists():
         result.unlink()
     env["AGENTIC_COLOR_RESULT"] = str(result)
-    command = [env.get("NVIM", "nvim"), "-i", "NONE", "-u", f"{root}/nvim/init.lua"]
+    command = [env.get("NVIM", "nvim"), "-i", "NONE", "-u", f"{root}/nvim/init.lua",
+               "--cmd", f"set runtimepath^={root}/nvim"]
     if override:
         command += ["--cmd", f"set {override}"]
     command += ["+lua vim.defer_fn(function() dofile(vim.env.AGENTIC_COLOR_TEST); vim.cmd('qa!') end, 300)"]
