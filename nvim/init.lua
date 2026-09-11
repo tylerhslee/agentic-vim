@@ -4,6 +4,9 @@ vim.g.maplocalleader = ","
 vim.opt.number = true
 -- Let Neovim detect the terminal's RGB support instead of forcing it.
 require("terminal_colors").setup()
+
+-- Native LSP: completion and go-to-definition for installed libraries.
+require("lsp").setup()
 vim.opt.mouse = "a"
 vim.opt.updatetime = 250
 vim.opt.cursorline = true
