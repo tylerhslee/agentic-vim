@@ -171,6 +171,10 @@ type definitions, `gO` for file symbols, and `gW` for workspace symbols.
 `Space rn` renames a symbol and `Space ca` opens code actions, when supported
 by the server. Files default to four-space indentation and word-boundary wrapping.
 
+In an Agentic prompt, type `$` at the start of the line to open completion for
+available Codex skills. Continue typing to filter the list and press `Tab` or
+`Enter` to accept a skill.
+
 `Space` is the global leader and comma is Agentic's local leader. For example,
 `Space e` means press Space, release it, then press `e`. From an ordinary editor
 buffer, Agentic commands use `Space`; their comma versions work only while focus

@@ -2744,3 +2744,100 @@ index 70360e4..af16727 100644
      end)
  
      it("destroys the resolved session and keeps the others", function()
+diff --git a/lua/agentic/acp/slash_commands.lua b/lua/agentic/acp/slash_commands.lua
+index 9586622..52e918d 100644
+--- a/lua/agentic/acp/slash_commands.lua
++++ b/lua/agentic/acp/slash_commands.lua
+@@ -65,15 +65,15 @@ function SlashCommands.setCommands(bufnr, available_commands)
+     States.setSlashCommands(bufnr, commands)
+ end
+ 
+---- Setup native Neovim completion for slash commands in the input buffer
++--- Setup native Neovim completion for slash commands and `$skill` mentions
+ --- Uses completefunc with <C-x><C-u> trigger
+ --- Neovim handles fuzzy filtering automatically via completeopt
+ --- @param bufnr integer The input buffer number
+ function SlashCommands.setup_completion(bufnr)
+     vim.bo[bufnr].completeopt = "menu,menuone,noinsert,popup,fuzzy"
+ 
+-    -- Include `-` as keyword character so completion doesn't close when typing it
+-    vim.bo[bufnr].iskeyword = vim.bo[bufnr].iskeyword .. ",-"
++    -- Keep command and skill names together while the completion menu filters.
++    vim.bo[bufnr].iskeyword = vim.bo[bufnr].iskeyword .. ",-,$"
+ 
+     -- Set completefunc to return our commands
+     -- CRITICAL: v:lua syntax does NOT support parens in require call
+@@ -102,7 +102,8 @@ function SlashCommands.setup_completion(bufnr)
+ 
+             local line = vim.api.nvim_get_current_line()
+ 
+-            if not line:match("^/") or line:match("%s") then
++            local prefix = line:sub(1, 1)
++            if (prefix ~= "/" and prefix ~= "$") or line:match("%s") then
+                 return
+             end
+ 
+@@ -122,8 +123,8 @@ end
+ --- @return number|table Start column when findstart=1, completion items when findstart=0
+ function SlashCommands.complete_func(findstart, _base)
+     if findstart == 1 then
+-        -- Return the column where the completion starts (after the "/")
+-        return 1
++        -- Slash commands replace text after `/`; direct skill mentions include `$`.
++        return vim.api.nvim_get_current_line():match("^%$") and 0 or 1
+     end
+ 
+     return States.getSlashCommands()
+diff --git a/lua/agentic/acp/slash_commands.test.lua b/lua/agentic/acp/slash_commands.test.lua
+index eb575e7..e1c990a 100644
+--- a/lua/agentic/acp/slash_commands.test.lua
++++ b/lua/agentic/acp/slash_commands.test.lua
+@@ -146,9 +146,10 @@ describe("agentic.acp.SlashCommands", function()
+             assert.equal("menu,menuone,noinsert,popup,fuzzy", completeopt)
+         end)
+ 
+-        it("adds '-' to iskeyword", function()
++        it("adds command punctuation to iskeyword", function()
+             local iskeyword = vim.bo[bufnr].iskeyword
+             assert.is_true(iskeyword:match(",-") ~= nil)
++            assert.is_true(iskeyword:find("$", 1, true) ~= nil)
+         end)
+ 
+         it("sets completefunc - must not use () - vim fallback", function()
+@@ -161,6 +162,11 @@ describe("agentic.acp.SlashCommands", function()
+     end)
+ 
+     describe("complete_func", function()
++        it("replaces the leading dollar for direct skill completion", function()
++            vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "$deep" })
++            assert.equal(0, SlashCommands.complete_func(1, "$deep"))
++        end)
++
+         it("returns commands on findstart=0", function()
+             --- @type agentic.acp.AvailableCommand[]
+             local commands_mock = {
+@@ -216,5 +222,24 @@ describe("agentic.acp.SlashCommands", function()
+             feedkeys_spy:revert()
+         end)
+ 
++        it("triggers feedkeys when typing a skill with $ at start of line", function()
++            SlashCommands.setCommands(bufnr, {
++                { name = "$deep-research", description = "Research deeply" },
++            })
++            local feedkeys_spy = spy.on(vim.api, "nvim_feedkeys")
++            vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "$deep" })
++            vim.api.nvim_win_set_cursor(0, { 1, 5 })
++
++            vim.cmd("startinsert")
++            vim.cmd("doautocmd TextChangedI")
++
++            local completion_keys =
++                vim.api.nvim_replace_termcodes("<C-x><C-u>", true, false, true)
++            assert
++                .spy(feedkeys_spy).was
++                .called_with(completion_keys, "n", false)
++            feedkeys_spy:revert()
++        end)
++
+         it("does not trigger completion when commands list is empty", function()
+             local feedkeys_spy = spy.on(vim.api, "nvim_feedkeys")

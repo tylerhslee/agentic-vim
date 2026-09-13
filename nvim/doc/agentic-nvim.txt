@@ -75,6 +75,10 @@ SESSION PICKER ~
   session's prompt. Subagents use a read-only activity preview. Every session
   keeps its own unsent draft. Closing on a subagent opens its parent prompt.
 
+AGENTIC PROMPT COMPLETION ~
+  $ (first character)     Show available Codex skills
+  Tab / Enter             Accept the selected skill completion
+
 PYTHON CODE NAVIGATION (PYRIGHT) ~
   gd / gD                 Definition / declaration (when supported)
   K                       Documentation under cursor
