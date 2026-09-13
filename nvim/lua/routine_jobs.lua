@@ -15,8 +15,8 @@ local state = {
   refresh_timer = nil,
 }
 
-local namespace = vim.api.nvim_create_namespace("LeeHaRinRoutineJobs")
-local augroup = vim.api.nvim_create_augroup("LeeHaRinRoutineJobs", { clear = true })
+local namespace = vim.api.nvim_create_namespace("AgenticVimRoutineJobs")
+local augroup = vim.api.nvim_create_augroup("AgenticVimRoutineJobs", { clear = true })
 
 local function notify(message, level)
   vim.notify(message, level or vim.log.levels.INFO, { title = "Routine Jobs" })

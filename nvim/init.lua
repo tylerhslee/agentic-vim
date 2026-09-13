@@ -2,6 +2,12 @@
 vim.g.mapleader = " "
 vim.g.maplocalleader = ","
 vim.opt.number = true
+vim.opt.expandtab = true
+vim.opt.tabstop = 4
+vim.opt.shiftwidth = 4
+vim.opt.softtabstop = 4
+vim.opt.wrap = true
+vim.opt.linebreak = true
 -- Let Neovim detect the terminal's RGB support instead of forcing it.
 require("terminal_colors").setup()
 
@@ -15,15 +21,17 @@ vim.opt.cursorlineopt = "line"
 -- Search only the installer-managed native package root. This prevents stale
 -- plugins in other package namespaces from shadowing the pinned revisions.
 vim.opt.packpath = table.concat({
-  vim.fn.stdpath("data") .. "/agentic-vim/nvim-site",
+  vim.fn.stdpath("data") .. "/nvim-site",
   vim.env.VIMRUNTIME,
 }, ",")
 
 -- Provider binaries are installed in Neovim's portable data directory.
-local provider_bin = vim.fn.stdpath("data") .. "/agentic-vim/bin"
+local provider_bin = vim.fn.stdpath("data") .. "/bin"
 
 -- Show live ChatGPT Codex quota windows without reading or storing auth data.
 require("codex_usage").setup({ command = provider_bin .. "/codex" })
+require("statusbar").setup()
+require("cheatsheet").setup()
 
 -- Keep routine scheduling in systemd when the WSL-only LeeHaRin mirror is
 -- installed. Other machines retain the pane and keymap with an empty job list.
@@ -120,6 +128,7 @@ vim.cmd("packadd nvim-web-devicons")
 vim.cmd("packadd neo-tree.nvim")
 require("nvim-web-devicons").setup({})
 local tree_width = 34
+local neotree_marquee = require("neotree_marquee")
 require("neo-tree").setup({
   close_if_last_window = true,
   popup_border_style = "rounded",
@@ -173,6 +182,9 @@ require("neo-tree").setup({
     },
   },
   filesystem = {
+    components = {
+      name = neotree_marquee.name,
+    },
     filtered_items = {
       visible = true,
     },
@@ -184,6 +196,7 @@ require("neo-tree").setup({
     use_libuv_file_watcher = true,
   },
 })
+neotree_marquee.setup()
 
 -- Keep the sidebar fixed even when another pane explicitly resizes windows.
 local tree_width_group = vim.api.nvim_create_augroup("FixedTreeWidth", { clear = true })
@@ -213,7 +226,7 @@ vim.keymap.set("n", "<leader>E", "<Cmd>Neotree filesystem focus reveal left<CR>"
 
 -- Start an installed Tree-sitter parser whenever a matching filetype opens.
 vim.cmd("packadd nvim-treesitter")
-local treesitter_group = vim.api.nvim_create_augroup("LeeHaRinTreesitter", { clear = true })
+local treesitter_group = vim.api.nvim_create_augroup("AgenticVimTreesitter", { clear = true })
 vim.api.nvim_create_autocmd("FileType", {
   group = treesitter_group,
   callback = function(args)
@@ -243,6 +256,25 @@ require("render-markdown").setup({
 
 require("agentic").setup({
   provider = "codex-acp",
+  -- Give the session title the chat's full width; settings stay in the status bar.
+  headers = {
+    chat = function(_, session_state)
+      local title = "New session"
+      -- Match the header's owner, including when another session has focus.
+      for _, session in pairs(require("agentic.session_registry").sessions) do
+        if session_state and session.session_state == session_state then
+          if session.chat_history.title ~= "" then title = session.chat_history.title end
+          break
+        end
+      end
+      return "󰻞 " .. title:gsub("[\r\n\t]", " "):gsub("%%", "%%%%")
+    end,
+    input = function() return "" end,
+    code = function() return "" end,
+    files = function() return "" end,
+    diagnostics = function() return "" end,
+    todos = function() return "" end,
+  },
   keymaps = {
     widget = {
       switch_provider = "<localleader>l",
@@ -262,6 +294,16 @@ require("agentic").setup({
 })
 
 local agentic = require("agentic")
+
+-- A quiet single-line title, without the default bold blue background.
+local function chat_title_highlight()
+  vim.api.nvim_set_hl(0, "AgenticTitle", { fg = "#a5adcb", bg = "NONE", bold = false })
+end
+chat_title_highlight()
+vim.api.nvim_create_autocmd("ColorScheme", {
+  group = vim.api.nvim_create_augroup("AgenticChatTitle", { clear = true }),
+  callback = chat_title_highlight,
+})
 
 -- Make Agentic's widget controls available from normal editor buffers under
 -- the global Space leader. Comma remains local to Agentic buffers. The bridge

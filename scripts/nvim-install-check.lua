@@ -3,12 +3,19 @@
 local ok, err = xpcall(function()
   assert(vim.v.errmsg == "", "Neovim startup failed: " .. vim.v.errmsg)
   assert(vim.fn.has("nvim-0.12") == 1, "Neovim 0.12 or newer is required")
-  for _, name in ipairs({ "agentic", "neo-tree", "snacks", "render-markdown", "codex_usage", "routine_jobs" }) do
+  assert(vim.env.NVIM_APPNAME == "agentic-vim", "nvim launcher did not enable the isolated Agentic Vim app")
+  for _, name in ipairs({ "agentic", "neo-tree", "snacks", "render-markdown", "codex_usage", "routine_jobs", "lsp", "statusbar" }) do
     require(name)
   end
+  assert(
+    require("agentic.ui.session_hud").preserves_chat_buffer == true,
+    "Installed Agent HUD does not preserve the visible chat buffer"
+  )
   local config = require("agentic.config")
   local provider = config.acp_providers[config.provider].command
   assert(vim.fn.executable(provider) == 1, "Configured ACP provider is not executable: " .. provider)
+  local pyright = vim.fn.stdpath("data") .. "/bin/pyright-langserver"
+  assert(vim.fn.executable(pyright) == 1, "Pyright language server is not executable: " .. pyright)
 
   local parsers = vim.split(vim.env.AGENTIC_VIM_PARSERS or "", " ", { trimempty = true })
   if #parsers > 0 then

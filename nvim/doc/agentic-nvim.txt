@@ -1,0 +1,91 @@
+Agentic NVIM cheatsheet                              *agentic-nvim-cheatsheet*
+
+F2 or Space F1 (Normal mode) opens this sheet. Either shortcut closes it too.
+The sheet floats above the editor without resizing chat; toggle from any pane.
+q / Esc also closes it. Use / to search, n for next match.
+F1 keeps Neovim's built-in help. Command fallback: :AgenticCheatsheet
+
+Space is the global leader: press Space, release, then the remaining keys.
+Comma bindings work inside Agentic. Shortcuts below use Normal mode unless
+their context says otherwise. Esc or jj leaves Insert mode.
+
+EVERYDAY EDITING ~
+  :w                      Save current file
+  :wq                     Confirm saving all modified files and quitting
+  :q                      Close current window (refuses unsaved changes)
+  i / a                   Insert before / after cursor
+  u / Ctrl-r              Undo / redo
+  v / V                   Select characters / lines
+  yy / dd / p             Copy line / cut line / paste after cursor
+  /text / n / N           Search / next match / previous match
+  gg / G                  First / last line
+  Ctrl-h/j/k/l            Focus left / below / above / right window
+  Ctrl-w =                Equalize window sizes
+  :split / :vsplit        Horizontal / vertical split
+  :terminal               Open a shell in the current window
+  Esc (terminal)          Enter Terminal-Normal mode; i resumes shell input
+
+FILES AND PROJECT TREE ~
+  Space e / Space E       Toggle tree / focus current file in tree
+  j / k                   Next / previous entry
+  l or Enter / h          Open / collapse
+  Backspace               Move up a directory
+  / / H                   Search tree / toggle hidden and ignored items
+  < / >                   Previous / next source (Files, Buffers, Git)
+  ? / q                   Tree help / close tree
+  Buffers: d or bd        Close buffer, keeping its file (protects unsaved work)
+  Buffers: S / s / t      Open in horizontal split / vertical split / tab
+  Buffers: P              Toggle preview
+
+AGENTIC CHAT ~
+  Space aa                Toggle chat
+  Space ac                Add current file or visual selection as context
+  Space an / Space ar     New session / restore a provider session
+  Space al                Rotate chat layout
+  Space ax                Stop generation
+  Space aq                Close chat and widen editor
+  Enter / Ctrl-s          Submit from Agentic prompt
+  Shift-Tab               Choose approval mode inside Agentic
+  Space m / ,m            Select model (editor / Agentic)
+  Space l / ,l            Select provider
+  Space t / ,t            Select thought level
+  Space o / ,o            Open Agentic options
+  Space ] / ,]            Next session
+  Space [ / ,[            Previous session
+  Space D / ,D            Destroy current session
+  Space au                Refresh Codex quota
+  Space aj                Open Routine Jobs pane
+
+  The session name and chat icon live above the chat ("New session" until named).
+  The bottom status bar shows model,
+  thought level, approval mode, generation activity, and available Codex quota.
+
+SESSION PICKER ~
+  Space s / ,s            Replace prompt with session picker (editor / Agentic)
+  j / k                   Select session and preview its chat
+  Enter                   Open selected session
+  e / R                   Rename selected session
+  D                       Destroy selected session after confirmation
+  Tab                     Switch session list / transcript
+  G                       Resume following incoming messages
+  q / Esc / Space s       Close picker; keep the highlighted session
+
+  j/k shows the selected session's actual chat buffer in the window above the
+  picker, preserving its normal rendering and live state. Enter opens that
+  session's prompt. Subagents use a read-only activity preview. Every session
+  keeps its own unsent draft. Closing on a subagent opens its parent prompt.
+
+PYTHON CODE NAVIGATION (PYRIGHT) ~
+  gd / gD                 Definition / declaration (when supported)
+  K                       Documentation under cursor
+  grr / gri / grt         References / implementations / type definition
+  gO / gW                 File symbols / workspace symbols
+  Space rn / Space ca     Rename symbol / code actions
+  Space ci / Space co     Incoming / outgoing calls (when supported)
+  Ctrl-o / Ctrl-i         Back / forward through jump history
+  [d / ]d                 Previous / next diagnostic
+  Ctrl-Space (Insert)     Request completion
+  Tab / Shift-Tab         Next / previous visible completion (Insert)
+  Enter (Insert)          Accept visible completion
+
+ vim:tw=78:ts=8:noet:ft=help:norl:

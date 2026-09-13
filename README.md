@@ -1,22 +1,25 @@
 # Agentic Vim
 
-A reproducible Neovim environment centered on Agentic.nvim and Codex. The
-repository captures the live editor configuration, exact plugin revisions, the
-custom Agent HUD overlay, provider versions, and the user's portable Codex
-defaults. Credentials, sessions, caches, and the personal LeeHaRin vault are
-never committed.
+An independent Neovim distribution centered on
+[Agentic.nvim](https://github.com/carlos-algms/agentic.nvim) and Codex. This is
+not an official Agentic.nvim or Neovim project and is not endorsed by either
+upstream project.
 
-## Fresh laptop setup
+The repository captures the editor configuration, exact plugin revisions, a
+modified Agentic.nvim extension, and provider versions. Credentials, sessions,
+caches, and machine-local data are never committed. Agentic.nvim was created by
+Carlos Gomes and is used and modified under its MIT License; see
+[Third-party notices](THIRD_PARTY_NOTICES.md).
+
+## Fresh machine setup
 
 The installer supports macOS and Linux on Apple Silicon/ARM64 and x86-64. It
 downloads verified, pinned builds of Neovim 0.12.5 and Node.js 22.22.2, installs
 the exact plugin and provider versions, compiles Tree-sitter parsers locally,
-and links this repository's `nvim/` directory as your Neovim configuration.
-It also installs JetBrainsMono Nerd Font for your user account.
-
-The user's preference is to use the operating system's terminal. Keep this
-setup independent of terminal emulators: do not install one or manage its
-profile. Approximate Macchiato colors across platforms are acceptable.
+and links this repository's `nvim/` directory as an isolated configuration.
+It installs `~/.local/bin/nvim` as the launcher while leaving `~/.config/nvim`
+and ordinary Neovim data untouched. It also installs JetBrainsMono Nerd Font
+for the current user account.
 
 Prerequisites are Git, curl, tar, and a C compiler. On a new Mac, install the
 Command Line Tools first:
@@ -36,10 +39,6 @@ exec "$SHELL" -l
 nvim
 ```
 
-Because the repository is private, the initial clone requires GitHub
-authentication (for example, a GitHub credential manager or an SSH key and the
-equivalent SSH clone URL). No other project-specific secret is required.
-
 The credential wizard follows the [official Codex authentication
 flow](https://developers.openai.com/codex/auth/): either ChatGPT browser sign-in
 or an OpenAI API key. The key is passed directly to
@@ -48,21 +47,23 @@ file. API-key usage is billed through the OpenAI Platform account, while
 ChatGPT sign-in uses eligible subscription access.
 
 Run `./scripts/install.sh --dry-run` to preview the installation. If
-`~/.config/nvim`, the managed links under `~/.local/bin`, or the isolated plugin
+`~/.config/agentic-vim`, `~/.local/bin/nvim`, or the isolated data
 directory already conflicts, the installer stops. Re-run with `--force` to move
-each conflict into a timestamped directory under
+conflicts into a timestamped directory under
 `~/.local/state/agentic-vim/backups/` before replacing it.
 
-The captured Codex defaults intentionally match this machine: approval policy
-`never` with `danger-full-access`. That gives Codex unrestricted local access,
-so use this setup only on a machine and in repositories you trust. To restore a
-replaced configuration, move the desired item out of the timestamped backup
-directory and back to its original path.
+The installer does not replace `~/.codex/config.toml`. Agentic.nvim and its
+managed provider use the user's normal Codex authentication and settings, so
+review those settings before granting an agent write or command-execution
+access. To restore a replaced Agentic Vim file, move it out of the timestamped
+backup directory and back to its original path.
 
 The installer also adds `~/.local/bin` to `.zshrc` or `.bashrc` when necessary.
 Run `nvim` in your operating system's terminal; file arguments work as usual:
-`nvim README.md`. Select **JetBrainsMono Nerd Font Mono** at **14pt** in the
-terminal's font settings, with two pixels of extra line spacing if supported.
+`nvim README.md`. This launcher selects the isolated Agentic Vim configuration;
+it does not read or replace `~/.config/nvim`. Select **JetBrainsMono Nerd Font
+Mono** at **14pt** in the terminal's font settings, with two pixels of extra
+line spacing if supported.
 Installing a font does not select it in an existing terminal window; Neovim's
 `guifont` only affects graphical clients.
 
@@ -87,6 +88,16 @@ control.
 
 To update an existing clone, pull changes and rerun the installer. Re-running
 the same revision is idempotent.
+
+### Coding-agent onboarding
+
+Repository instructions live in `AGENTS.md`. Claude Code loads `CLAUDE.md`,
+which imports that canonical guide so Claude and other coding agents receive the
+same project boundaries, patch workflow, and verification commands. Run
+`bash tests/agent-onboarding.sh` to check the onboarding contract without
+authentication or a billable agent request. After authenticating Claude Code,
+run `bash tests/agent-onboarding.sh --live` for an opt-in, read-only agent check;
+the live form makes a provider request and may count against account usage.
 
 ### Platform-specific behavior
 
@@ -138,6 +149,28 @@ See [Cursor ACP](https://cursor.com/docs/cli/acp) and
 
 ## Neovim IDE quick reference
 
+Press `F2` (or `Space F1` in Normal mode) to open the searchable [Agentic NVIM cheatsheet](nvim/doc/agentic-nvim.txt)
+in a floating help window without resizing chat. `F2` toggles it from any pane;
+`q` or `Esc` closes it from inside. `:AgenticCheatsheet` also opens
+it, and `F1` keeps Neovim's built-in help. The session name appears in a slim,
+muted header above the chat beside the chat icon (or “New session” before it has
+a title); the status bar keeps settings and quota information.
+
+The installer links `~/.config/agentic-vim` to this checkout's `nvim/`
+directory. The installed `nvim` launcher sets `NVIM_APPNAME=agentic-vim`, keeping
+its configuration, data, state, and cache separate from ordinary Neovim. Lua
+configuration edits therefore take effect when Agentic Vim restarts. Changes to
+`nvim/plugins.lock`, plugin patches, or `provider/package-lock.json` require
+rerunning `bash scripts/install.sh` to update the installed dependencies.
+
+Python uses the installer-managed Pyright 1.1.414 server. Completion appears
+while typing identifiers: `Tab` / `Shift-Tab` select suggestions, `Enter`
+accepts, and `Ctrl-Space` requests completion. Use `gd` for definitions, `K`
+for documentation, `grr` for references, `gri` for implementations, `grt` for
+type definitions, `gO` for file symbols, and `gW` for workspace symbols.
+`Space rn` renames a symbol and `Space ca` opens code actions, when supported
+by the server. Files default to four-space indentation and word-boundary wrapping.
+
 `Space` is the global leader and comma is Agentic's local leader. For example,
 `Space e` means press Space, release it, then press `e`. From an ordinary editor
 buffer, Agentic commands use `Space`; their comma versions work only while focus
@@ -158,7 +191,7 @@ is inside Agentic.
 | `Space au` | Editor | Refresh the live ChatGPT Codex quota display |
 | `Space aj` | Editor | Toggle the Routine Jobs management pane |
 | `Space aq` | Editor | Close Agentic and restore a wide editor |
-| `Space s` / `,s` | Editor / Agentic | Open the session HUD/picker |
+| `Space s` / `,s` | Editor / Agentic | Toggle the session picker in the prompt area |
 | `Space ]` / `Space [` | Editor | Move to the next / previous session |
 | `,]` / `,[` | Agentic | Move to the next / previous session |
 | `Space D` / `,D` | Editor / Agentic | Destroy the current session |
@@ -177,8 +210,9 @@ and ignored items, and `q` to close. Those items are visible by default. Press
 `?` there for the complete command list. The source tabs at the top switch
 among files, open buffers, and Git status; `<` and `>` move between them.
 The tree stays 34 columns wide and wraps long filenames onto indented continuation
-lines, with spacing before status markers. `!` means unstaged changes; `?` means
-an untracked file. `j`/`k` still move between entries, including wrapped entries.
+lines. When a long filename is selected, it pauses briefly, scrolls horizontally,
+and loops so the whole name remains readable. `!` means unstaged changes; `?`
+means an untracked file. `j`/`k` still move between entries, including wrapped entries.
 
 In Neo-tree's **Buffers** source, the entries are files currently loaded in
 Neovim, grouped by directory. `#7` is buffer number 7, `[+]` means the buffer
@@ -196,9 +230,17 @@ on the right show diagnostics or Git status.
 | `o` | Open the sorting menu |
 | `Tab` | Mark or unmark an entry for multi-item file operations |
 
-Inside the Agent HUD, use `j`/`k` to select a session, `Enter` to open it,
-`e` or `R` to rename it, and `D` to destroy it after confirmation. `Tab` or
-`l` enters the output preview; `Tab` or `h` returns to the session list.
+The session picker replaces only the prompt area and leaves the visible chat
+buffer untouched while you browse. If chat is hidden, opening the picker
+restores it first. Use `j`/`k` to select a session, `Enter` to open it, `e` or
+`R` to rename it, and `D` to destroy it after confirmation.
+`Tab` switches between the list and transcript; `q`, `Esc`, or `Space s` closes
+the picker and opens the highlighted session's prompt. Each session keeps its
+own unsent draft. Closing while inspecting a subagent opens its parent session.
+
+The normal chat buffer continues to follow incoming messages. The picker has no
+prompt input. Nested subagents remain visible as a status tree, but browsing
+them does not replace the chat buffer.
 
 Inside Routine Jobs, use `j`/`k` to select a predefined job, `r` to run it now,
 `x` to stop its current run, `s` to enable or pause its automatic triggers, `l` or
@@ -217,16 +259,33 @@ watcher, reconciliation schedule, and execution separately.
   background work. Inside Agentic, use the comma versions.
 - Recover an older chat: `Space ar`, type to filter the picker, select the
   session, and press `Enter`.
-- Check usage: the bottom statusline updates from Codex's live ChatGPT quota
-  notifications; `Space au` requests an immediate refresh. Read the current
-  chat's token/context figures in its Agentic header. Type `/status` in the
-  prompt for the provider's full account and session report. No separate
-  AgentTally or ccusage plugin is installed.
+- The single global bottom statusline has colored editor and agent sections
+  aligned with the chat column; Neo-tree shares the editor section. The focused
+  editor section shows editor mode, filetype and cursor position. The agent
+  section always shows model, effort, agent mode, and a shortened session title
+  with its session number; quota appears when space allows. Panel header boxes
+  are hidden. Icons mark files, unsaved changes and diagnostics. When
+  chat is stacked above/below the editor, the bar divides evenly. Customize the
+  layout and colors in `nvim/lua/statusbar.lua`.
+- Check usage: the bottom statusline updates from
+  Codex's live ChatGPT quota notifications; `Space au` requests an immediate
+  refresh. Read the current chat's token/context figures in its Agentic header.
+  Type `/status` in the prompt for the provider's full account and session
+  report. No separate AgentTally or ccusage plugin is installed.
 - Manage routines: `Space aj` opens the bottom pane. On the original WSL host,
   it detects the LeeHaRin mirror's systemd units. Other machines show no jobs.
 
 Plugins are installed in the isolated native package root
-`~/.local/share/nvim/agentic-vim/nvim-site/pack/agentic-vim/start/` by default.
+`~/.local/share/agentic-vim/nvim-site/pack/agentic-vim/start/` by default.
 Graphical Neovim clients use a 14-point JetBrainsMono Nerd Font with two pixels
 of extra line spacing. Terminal Neovim cannot control font face, size, or line
 spacing; those settings belong to the terminal application's profile.
+
+## Licensing and attribution
+
+The original code in this repository is available under the [MIT License](LICENSE).
+The distribution downloads and configures third-party projects under their own
+licenses. In particular, the customized chat interface is a patched derivative
+of Carlos Gomes's MIT-licensed Agentic.nvim, not an original upstream release.
+See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for provenance and license
+information.

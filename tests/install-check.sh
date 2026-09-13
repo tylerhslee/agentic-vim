@@ -7,15 +7,21 @@ TEST_DIR=$(mktemp -d "${TMPDIR:-/tmp}/agentic-vim-check-test.XXXXXX")
 trap 'rm -rf "$TEST_DIR"' EXIT
 export XDG_CONFIG_HOME="$TEST_DIR/config" XDG_DATA_HOME="$TEST_DIR/data"
 export XDG_STATE_HOME="$TEST_DIR/state" XDG_CACHE_HOME="$TEST_DIR/cache"
+export NVIM_APPNAME="agentic-vim"
 export NVIM_LOG_FILE="$TEST_DIR/nvim.log" NVIM_CODEX_USAGE_DISABLED=1
 export AGENTIC_VIM_CHECK_SCRIPT="$ROOT/scripts/nvim-install-check.lua"
 export AGENTIC_VIM_CHECK_MARKER="$TEST_DIR/success"
+mkdir -p "$XDG_DATA_HOME/agentic-vim/bin"
+ln -s "$(command -v "$NVIM")" "$XDG_DATA_HOME/agentic-vim/bin/pyright-langserver"
 cat > "$TEST_DIR/init.lua" <<'LUA'
-for _, name in ipairs({ 'agentic', 'neo-tree', 'snacks', 'render-markdown', 'codex_usage', 'routine_jobs' }) do
+for _, name in ipairs({ 'agentic', 'neo-tree', 'snacks', 'render-markdown', 'codex_usage', 'routine_jobs', 'lsp', 'statusbar' }) do
   package.preload[name] = function() return {} end
 end
 package.preload['agentic.config'] = function()
   return { provider = 'test', acp_providers = { test = { command = vim.v.progpath } } }
+end
+package.preload['agentic.ui.session_hud'] = function()
+  return { preserves_chat_buffer = true }
 end
 package.preload['nvim-treesitter'] = function()
   return { install = function()
@@ -28,12 +34,18 @@ end
 if vim.env.TEST_CASE == 'plugin-missing' then
   package.preload['agentic'] = function() error('test missing plugin') end
 end
+if vim.env.TEST_CASE == 'hud-stale' then
+  package.preload['agentic.ui.session_hud'] = function() return {} end
+end
 if vim.env.TEST_CASE == 'provider-missing' then
   package.preload['agentic.config'] = function()
     return { provider = 'test', acp_providers = { test = { command = '/nonexistent/agentic-provider' } } }
   end
 end
 if vim.env.TEST_CASE == 'startup-error' then error('test startup error') end
+if vim.env.TEST_CASE == 'pyright-missing' then
+  vim.fn.delete(vim.fn.stdpath('data') .. '/bin/pyright-langserver')
+end
 if vim.env.TEST_CASE == 'query-missing' then vim.treesitter.query.get = function() return nil end end
 LUA
 run_case() {
@@ -53,6 +65,7 @@ run_case() {
 }
 run_case startup-error '' failure
 run_case plugin-missing '' failure
+run_case hud-stale '' failure
 run_case provider-missing '' failure
 run_case install-false lua failure
 run_case install-error lua failure
@@ -60,3 +73,4 @@ run_case parser-missing nonexistent_agentic_parser failure
 run_case query-missing lua failure
 run_case healthy lua success
 run_case skip-parsers '' success
+run_case pyright-missing '' failure

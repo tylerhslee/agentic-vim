@@ -1,5 +1,5 @@
 diff --git a/README.md b/README.md
-index 55ff01e..cb6d519 100644
+index 55ff01e..6ec4800 100644
 --- a/README.md
 +++ b/README.md
 @@ -655,7 +655,7 @@ Negative values are clamped to 0. Diff tool calls keep full header-only titles.
@@ -7,69 +7,66 @@ index 55ff01e..cb6d519 100644
  | `:lua require("agentic").new_session()`                      | Start a new session; choose what happens to the current one       |
  | `:lua require("agentic").destroy_session(opts)`              | Destroy a session and its widget                                  |
 -| `:lua require("agentic").select_session()`                   | Pick any live session from a list and open it here                |
-+| `:lua require("agentic").select_session()`                   | Open the Agent HUD, or the compact picker outside a visible chat  |
++| `:lua require("agentic").select_session()`                   | Toggle the session picker in the prompt area                     |
  | `:lua require("agentic").next_session()`                     | Open the next session, wrapping at the end                        |
  | `:lua require("agentic").prev_session()`                     | Open the previous session, wrapping at the start                  |
  | `:lua require("agentic").new_session_with_provider()`        | Pick a provider, then start a new session with it                 |
-@@ -747,8 +747,18 @@ require("agentic").destroy_session({ session = 2 })
+@@ -747,8 +747,17 @@ require("agentic").destroy_session({ session = 2 })
  ```
  
  Session keys appear in chat buffer names once more than one session exists.
 -`select_session()` lists every live session by title, marking the one visible in
 -the current tab.
-+`select_session()` opens the Agent HUD over the prompt area when a chat is
-+visible. The larger dashboard lists live sessions with their status and lets you
-+open one with `<CR>`. Providers implementing draft ACP native subagent sessions
-+also appear as a nested tree; selecting a child shows its independent messages,
-+thoughts, plan, and tool output. Subagent views are observational and cannot be
-+prompted, matching the draft protocol. The session list stays fixed above a
-+scrollable activity preview. Use `j`/`k` to navigate, `<Tab>` to switch between
++`select_session()` leaves the normal chat pane untouched and replaces its prompt
++with the Agent HUD session picker. A hidden chat is opened first. The picker
++lists live sessions with their status and lets you open one with `<CR>`.
++Providers implementing draft ACP native subagent sessions also appear as a
++nested status tree, but browsing them never replaces the visible chat buffer.
++Model, effort, provider, mode, context usage, cost, and session ID are shown
++when reported.
++There is no prompt input while the picker is open. Use `j`/`k` to navigate, `<Tab>` to switch between
 +panes, and `q` or `<Esc>` to close.
 +Press `D` on a top-level session and confirm to destroy it; destroying active
 +work cancels that work. Subagents cannot be destroyed independently.
-+Outside a visible Agentic chat, `select_session()` retains the compact
-+session-picker fallback.
  
  ### Built-in Keybindings
  
-@@ -766,7 +776,7 @@ These keybindings are automatically set in Agentic buffers:
+@@ -766,7 +777,7 @@ These keybindings are automatically set in Agentic buffers:
  | `<localLeader>m` | n     | Switch model (keeps history)                                    |
  | `<localLeader>t` | n     | Select thought effort level (model-dependent on Claude)         |
  | `<localLeader>o` | n     | Open options modal                                              |
 -| `<localLeader>l` | n     | List every live session and open the chosen one                 |
-+| `<localLeader>l` | n     | Toggle the Agent HUD (or session picker outside a visible chat) |
++| `<localLeader>l` | n     | Toggle the session picker in the prompt area                      |
  | `<localLeader>]` | n     | Open the next session                                           |
  | `<localLeader>[` | n     | Open the previous session                                       |
  | `<localLeader>D` | n     | Destroy the current session                                     |
-@@ -804,7 +814,7 @@ your setup:
+@@ -804,7 +815,7 @@ your setup:
          switch_model = "<localLeader>m",     -- Switch model
          change_thought_level = "<localLeader>t",  -- Select thought effort level
          open_options = "<localLeader>o",  -- Open options modal
 -        select_session = "<localLeader>l",  -- List and open a session
-+        select_session = "<localLeader>l",  -- Toggle Agent HUD / session picker
++        select_session = "<localLeader>l",  -- Toggle the session picker
          next_session = "<localLeader>]",    -- Open the next session
          prev_session = "<localLeader>[",    -- Open the previous session
          destroy_session = "<localLeader>D", -- Destroy the current session
 diff --git a/doc/agentic.txt b/doc/agentic.txt
-index 110ebfd..6e2dfa1 100644
+index 110ebfd..fec85e8 100644
 --- a/doc/agentic.txt
 +++ b/doc/agentic.txt
-@@ -454,7 +454,13 @@ falling back to the most recently opened one.
+@@ -454,7 +454,11 @@ falling back to the most recently opened one.
    require("agentic").destroy_session({ session = 2 })
  <
  Session keys appear in the chat buffer names once more than one session
 -exists. |agentic.select_session()| lists every live session.
-+exists. |agentic.select_session()| opens the Agent HUD over the prompt
-+area when a chat is visible. The dashboard lists live sessions and their
-+status; use `j`/`k` and `<CR>` to open one. Providers implementing draft
-+ACP native subagent sessions expose a nested, observational child tree.
-+Selecting a child previews its messages, thoughts, plan, and tool output;
-+children cannot be prompted. Use `q` or `<Esc>` to close. Without a chat
-+visible, the compact session picker remains available.
++exists. |agentic.select_session()| leaves the normal chat pane untouched and
++replaces its prompt with the Agent HUD picker, opening a hidden chat first. It
++lists live sessions and their status; use `j`/`k` and `<CR>` to open one.
++Draft ACP native subagents appear as a nested status tree without replacing
++the chat buffer. The HUD has no prompt input. Use `q` or `<Esc>` to close.
  
                                                        *agentic.toggle()*
  agentic.toggle({opts})
-@@ -563,10 +569,16 @@ agentic.destroy_session({opts})
+@@ -563,10 +568,18 @@ agentic.destroy_session({opts})
  
                                                *agentic.select_session()*
  agentic.select_session()
@@ -77,12 +74,14 @@ index 110ebfd..6e2dfa1 100644
 -  in the current tab. Entries are labelled with the session title,
 -  and the session visible in the current tab is marked. When no
 -  sessions exist, report that state without opening the picker.
-+  Toggle the Agent HUD over a visible chat's prompt area. It lists
-+  live sessions and native ACP subagents, shows their status and
-+  previews their output. Press `<CR>` on a session to open it in the
-+  current tab; press it on a subagent to inspect that child. Outside
-+  a visible chat, show the compact session picker. The session list
-+  stays fixed above a scrollable activity preview. Press `<Tab>` to
++  Toggle the Agent HUD picker in the prompt area while leaving the normal chat
++  buffer untouched. It lists live sessions and native ACP subagents and shows
++  their status. Press `<CR>` on a session to open it in the current tab. A
++  hidden chat is opened first. Browsing another session or subagent does not
++  replace the visible chat buffer.
++  Details include model, effort, provider, mode, context, cost, and session ID.
++  Missing provider values show as unknown.
++  No prompts can be sent from the HUD. Press `<Tab>` to
 +  switch between panes. Press `D` on a top-level session and confirm
 +  to destroy it; active work is cancelled. Subagents cannot be
 +  destroyed independently. When no sessions exist, report that state
@@ -90,12 +89,12 @@ index 110ebfd..6e2dfa1 100644
  
                                                  *agentic.next_session()*
  agentic.next_session()
-@@ -642,7 +654,7 @@ These keybindings are automatically set in Agentic buffers:
+@@ -642,7 +657,7 @@ These keybindings are automatically set in Agentic buffers:
    <localLeader>m         n       Switch model (keeps history)
    <localLeader>t         n       Select thought effort level (model-dependent)
    <localLeader>o         n       Open options modal
 -  <localLeader>l         n       List sessions and open one
-+  <localLeader>l         n       Toggle Agent HUD / session picker
++  <localLeader>l         n       Toggle the session picker
    <localLeader>]         n       Open the next session
    <localLeader>[         n       Open the previous session
    <localLeader>D         n       Destroy the current session
@@ -300,7 +299,7 @@ index 59216b4..e96ae36 100644
  --- @class agentic.acp.ACPProviderConfig
  --- @field name? string Provider name
 diff --git a/lua/agentic/config_default.lua b/lua/agentic/config_default.lua
-index a785b46..bbc87d3 100644
+index a785b46..be44476 100644
 --- a/lua/agentic/config_default.lua
 +++ b/lua/agentic/config_default.lua
 @@ -87,7 +87,7 @@
@@ -308,7 +307,7 @@ index a785b46..bbc87d3 100644
  --- @field change_thought_level agentic.UserConfig.KeymapValue Open the thought-level switcher
  --- @field open_options agentic.UserConfig.KeymapValue Open the agent config options modal
 ---- @field select_session agentic.UserConfig.KeymapValue Open the session picker
-+--- @field select_session agentic.UserConfig.KeymapValue Toggle the Agent HUD, or open the compact picker outside a visible chat
++--- @field select_session agentic.UserConfig.KeymapValue Toggle the session picker in the prompt area
  --- @field next_session agentic.UserConfig.KeymapValue Show the next session
  --- @field prev_session agentic.UserConfig.KeymapValue Show the previous session
  --- @field destroy_session agentic.UserConfig.KeymapValue Destroy the current session
@@ -850,101 +849,78 @@ index dc3d499..1b6f196 100644
  
  describe("agentic.SessionManager one-shot lifecycle", function()
 diff --git a/lua/agentic/session_navigation.lua b/lua/agentic/session_navigation.lua
-index 2f5fc9b..95a8f37 100644
+index 2f5fc9b..073cf29 100644
 --- a/lua/agentic/session_navigation.lua
 +++ b/lua/agentic/session_navigation.lua
-@@ -35,9 +35,59 @@ local function cycle(step)
+@@ -35,49 +35,28 @@ local function cycle(step)
  end
  
  local SessionNavigation = {}
+-
+---- Shows a picker over every live session and opens the chosen one.
 +local active_hud
-+local RENAME_ACTION = { action = "rename" }
-+
-+--- @param session agentic.SessionManager
-+local function prompt_rename(session)
-+    vim.ui.input({
-+        prompt = string.format("Rename session #%d: ", session.session_key),
-+        default = session.chat_history.title,
-+    }, function(title)
-+        if title ~= nil and not session:rename(title) then
-+            Logger.notify(
-+                "Session rename was not submitted; finish or cancel its active work first",
-+                vim.log.levels.WARN
-+            )
-+        end
-+    end)
-+end
-+
-+--- @param sessions agentic.SessionManager[]
-+local function select_session_to_rename(sessions)
-+    vim.ui.select(sessions, {
-+        prompt = "Rename which session:",
-+        format_item = function(item)
-+            local title = item.chat_history.title
-+            return string.format(
-+                "%s (%d)",
-+                title ~= "" and title or "Untitled",
-+                item.session_key
-+            )
-+        end,
-+    }, function(selected)
-+        if selected then
-+            prompt_rename(selected)
-+        end
-+    end)
-+end
- 
- --- Shows a picker over every live session and opens the chosen one.
++--- Toggles the session picker in the current chat's prompt area.
  function SessionNavigation.select()
+-    local sessions = SessionRegistry.list()
+-
+-    if #sessions == 0 then
+-        Logger.notify("No sessions available")
 +    if active_hud and active_hud:is_open() then
-+        active_hud:close()
++        active_hud:finish()
 +        active_hud = nil
-+        return
-+    end
-+
-+    local visible = SessionRegistry.visible_here()
-+    if visible then
-+        local SessionHud = require("agentic.ui.session_hud")
-+        active_hud = SessionHud:new(visible)
-+        active_hud:open()
-+        return
-+    end
-+
-     local sessions = SessionRegistry.list()
+         return
+     end
  
-     if #sessions == 0 then
-@@ -47,10 +97,16 @@ function SessionNavigation.select()
- 
-     local current_tab = vim.api.nvim_get_current_tabpage()
- 
+-    local current_tab = vim.api.nvim_get_current_tabpage()
+-
 -    vim.ui.select(sessions, {
-+    local choices = vim.list_extend(vim.list_slice(sessions), { RENAME_ACTION })
-+
-+    vim.ui.select(choices, {
-         prompt = "Select a Chat session:",
+-        prompt = "Select a Chat session:",
 -        --- @param item agentic.SessionManager
-+        --- @param item agentic.SessionManager|{ action: string }
-         format_item = function(item)
-+            if item == RENAME_ACTION then
-+                return "Rename session…"
-+            end
-+            --- @cast item agentic.SessionManager
-             local title = item.chat_history.title
-             local provider = item.agent
-                 and item.agent.provider_config
-@@ -72,6 +128,10 @@ function SessionNavigation.select()
-             return prefix .. label
-         end,
-     }, function(selected)
-+        if selected == RENAME_ACTION then
-+            select_session_to_rename(sessions)
+-        format_item = function(item)
+-            local title = item.chat_history.title
+-            local provider = item.agent
+-                and item.agent.provider_config
+-                and item.agent.provider_config.name
+-            local label = title ~= "" and title or "Untitled"
+-
+-            if provider then
+-                label = string.format("%s [%s]", label, provider)
+-            end
+-
+-            -- APPENDED, not a fallback: `or` short-circuits on the truthy provider name,
+-            -- so a key used as last fallback is unreachable and untitled sessions on one
+-            -- provider all render the same row.
+-            label = string.format("%s (%d)", label, item.session_key)
+-
+-            local prefix = item.widget:get_visible_tab_id() == current_tab
+-                    and "● "
+-                or "  "
+-            return prefix .. label
+-        end,
+-    }, function(selected)
+-        local session_key = selected and selected.session_key
+-
+-        if session_key then
+-            SessionRegistry.show_session(session_key)
++    local source = SessionRegistry.visible_here()
++    if not source then
++        source = SessionRegistry.current() or SessionRegistry.list()[1]
++        if not source then
++            Logger.notify("No sessions available")
 +            return
-+        end
-         local session_key = selected and selected.session_key
+         end
+-    end)
++        SessionRegistry.show_session(source.session_key)
++    end
++
++    local SessionHud = require("agentic.ui.session_hud")
++    active_hud = SessionHud:new(source)
++    active_hud:open()
+ end
  
-         if session_key then
+ --- Opens the session with the next higher key, wrapping at the end.
 diff --git a/lua/agentic/session_navigation.test.lua b/lua/agentic/session_navigation.test.lua
-index 81a22db..703b92c 100644
+index 81a22db..137eb50 100644
 --- a/lua/agentic/session_navigation.test.lua
 +++ b/lua/agentic/session_navigation.test.lua
 @@ -9,6 +9,7 @@ describe("agentic.SessionNavigation", function()
@@ -979,82 +955,163 @@ index 81a22db..703b92c 100644
          package.loaded["agentic.session_registry"] = original_registry
          package.loaded["agentic.session_navigation"] = original_navigation
      end)
-@@ -72,7 +78,9 @@ describe("agentic.SessionNavigation", function()
-         local second = create_session(2, "", nil)
-         sessions = { first, second }
-         ui_select_stub:invokes(function(items, opts, on_choice)
--            assert.equal(sessions, items)
-+            assert.equal(first, items[1])
-+            assert.equal(second, items[2])
-+            assert.equal("Rename session…", opts.format_item(items[3]))
-             assert.equal(
-                 "● First [TestProvider] (1)",
-                 opts.format_item(first)
-@@ -89,6 +97,64 @@ describe("agentic.SessionNavigation", function()
-         assert.spy(registry_mock.show_session).was.called_with(2)
+@@ -66,131 +72,32 @@ describe("agentic.SessionNavigation", function()
+         assert.spy(ui_select_stub).was.called(0)
      end)
  
-+    it("renames a session from the compact editor picker", function()
-+        local first = create_session(1, "First", nil)
-+        local second = create_session(2, "Second", nil)
-+        local rename_spy = spy.new(function()
-+            return true
-+        end)
-+        second.rename = rename_spy
-+        sessions = { first, second }
-+        local select_count = 0
-+        ui_select_stub:invokes(function(items, opts, on_choice)
-+            select_count = select_count + 1
-+            if select_count == 1 then
-+                assert.equal("Select a Chat session:", opts.prompt)
-+                on_choice(items[3])
-+            else
-+                assert.equal("Rename which session:", opts.prompt)
-+                on_choice(second)
-+            end
-+        end)
-+        ui_input_stub:invokes(function(opts, on_confirm)
-+            assert.equal("Rename session #2: ", opts.prompt)
-+            assert.equal("Second", opts.default)
-+            on_confirm("Provider title")
-+        end)
-+
-+        SessionNavigation.select()
-+
-+        assert.spy(rename_spy).was.called_with(second, "Provider title")
-+        assert.spy(registry_mock.show_session).was.called(0)
-+    end)
-+
-+    it("opens the Agent HUD when a session is visible here", function()
-+        local opened = spy.new(function() end)
-+        local source = create_session(1, "First")
-+        registry_mock.visible_here = spy.new(function()
-+            return source
-+        end)
-+        package.loaded["agentic.ui.session_hud"] = {
-+            new = function(_, received)
-+                assert.equal(source, received)
-+                return {
-+                    open = opened,
-+                    is_open = function()
-+                        return false
-+                    end,
-+                }
-+            end,
-+        }
-+        package.loaded["agentic.session_navigation"] = nil
-+        SessionNavigation = require("agentic.session_navigation")
-+
-+        SessionNavigation.select()
-+
-+        assert.spy(opened).was.called(1)
-+        assert.spy(ui_select_stub).was.called(0)
-+        package.loaded["agentic.ui.session_hud"] = nil
-+    end)
-+
-     it("distinguishes untitled sessions on the same provider", function()
-         local first = create_session(1, "", nil)
-         local second = create_session(2, "", nil)
+-    it("lists live sessions and opens the selected one", function()
+-        local current_tab = vim.api.nvim_get_current_tabpage()
+-        local first = create_session(1, "First", current_tab)
+-        local second = create_session(2, "", nil)
+-        sessions = { first, second }
+-        ui_select_stub:invokes(function(items, opts, on_choice)
+-            assert.equal(sessions, items)
+-            assert.equal(
+-                "● First [TestProvider] (1)",
+-                opts.format_item(first)
+-            )
+-            assert.equal(
+-                "  Untitled [TestProvider] (2)",
+-                opts.format_item(second)
+-            )
+-            on_choice(second)
+-        end)
+-
+-        SessionNavigation.select()
+-
+-        assert.spy(registry_mock.show_session).was.called_with(2)
+-    end)
+-
+-    it("distinguishes untitled sessions on the same provider", function()
+-        local first = create_session(1, "", nil)
+-        local second = create_session(2, "", nil)
+-        sessions = { first, second }
+-
+-        --- @type string|nil, string|nil
+-        local first_label, second_label
+-        ui_select_stub:invokes(function(_, opts, on_choice)
+-            first_label = opts.format_item(first)
+-            second_label = opts.format_item(second)
+-            on_choice(nil)
+-        end)
+-
+-        SessionNavigation.select()
+-
+-        assert.is_not.equal(first_label, second_label)
+-        assert.truthy(first_label and first_label:find("TestProvider", 1, true))
+-        assert.truthy(first_label and first_label:find("1", 1, true))
+-        assert.truthy(second_label and second_label:find("2", 1, true))
+-    end)
+-
+-    it("appends the session key to a titled session too", function()
+-        local titled = create_session(7, "My Chat", nil)
+-        sessions = { titled, create_session(8, "", nil) }
+-
+-        --- @type string|nil
+-        local label
+-        ui_select_stub:invokes(function(_, opts, on_choice)
+-            label = opts.format_item(titled)
+-            on_choice(nil)
+-        end)
+-
+-        SessionNavigation.select()
+-
+-        assert.equal("  My Chat [TestProvider] (7)", label)
+-    end)
+-
+-    it("shows the provider next to the title of a titled session", function()
+-        local current_tab = vim.api.nvim_get_current_tabpage()
+-        local titled = create_session(1, "My Chat", current_tab, {
+-            provider_config = { name = "claude-acp" },
+-        })
+-        sessions = { titled }
+-
+-        --- @type string|nil
+-        local label
+-        ui_select_stub:invokes(function(_, opts, on_choice)
+-            label = opts.format_item(titled)
+-            on_choice(nil)
+-        end)
+-
+-        SessionNavigation.select()
+-
+-        assert.equal("● My Chat [claude-acp] (1)", label)
+-    end)
+-
+-    it("shows the provider of an untitled session", function()
+-        local untitled = create_session(2, "", nil, {
+-            provider_config = { name = "gemini-acp" },
+-        })
+-        sessions = { untitled }
+-
+-        --- @type string|nil
+-        local label
+-        ui_select_stub:invokes(function(_, opts, on_choice)
+-            label = opts.format_item(untitled)
+-            on_choice(nil)
+-        end)
+-
+-        SessionNavigation.select()
+-
+-        assert.equal("  Untitled [gemini-acp] (2)", label)
+-    end)
+-
+-    it("labels a session whose agent has no provider config", function()
+-        local orphan = create_session(4, "", nil, {})
+-        sessions = { orphan }
+-
+-        --- @type string|nil
+-        local label
+-        ui_select_stub:invokes(function(_, opts, on_choice)
+-            label = opts.format_item(orphan)
+-            on_choice(nil)
+-        end)
+-
+-        assert.has_no_errors(function()
++    it(
++        "opens a hidden session's chat pane before displaying the HUD",
++        function()
++            local source = create_session(1, "First")
++            sessions = { source }
++            current_session = source
++            local opened = spy.new(function() end)
++            local original_hud = package.loaded["agentic.ui.session_hud"]
++            package.loaded["agentic.ui.session_hud"] = {
++                new = function(_, received)
++                    assert.equal(source, received)
++                    return {
++                        open = opened,
++                        is_open = function()
++                            return false
++                        end,
++                    }
++                end,
++            }
+             SessionNavigation.select()
+-        end)
+-
+-        assert.equal("  Untitled (4)", label)
+-    end)
+-
+-    it("does nothing when session selection is cancelled", function()
+-        sessions = { create_session(1) }
+-        ui_select_stub:invokes(function(_, _, on_choice)
+-            on_choice(nil)
+-        end)
+-
+-        SessionNavigation.select()
+-
+-        assert.spy(registry_mock.show_session).was.called(0)
+-    end)
++            package.loaded["agentic.ui.session_hud"] = original_hud
++            assert.spy(registry_mock.show_session).was.called_with(1)
++            assert.spy(opened).was.called(1)
++            assert.spy(ui_select_stub).was.called(0)
++        end
++    )
+ 
+     it("opens the next session in ascending key order", function()
+         local first = create_session(1)
 diff --git a/lua/agentic/subagent_store.lua b/lua/agentic/subagent_store.lua
 new file mode 100644
 index 0000000..96ca36e
@@ -1401,15 +1458,16 @@ index 149bf71..0ed0a60 100644
  
 diff --git a/lua/agentic/ui/session_hud.lua b/lua/agentic/ui/session_hud.lua
 new file mode 100644
-index 0000000..b2140b8
+index 0000000..f9db652
 --- /dev/null
 +++ b/lua/agentic/ui/session_hud.lua
-@@ -0,0 +1,591 @@
+@@ -0,0 +1,739 @@
 +local BufHelpers = require("agentic.utils.buf_helpers")
 +local Logger = require("agentic.utils.logger")
 +
 +local KEEP_SESSION = "Keep session"
 +local DESTROY_SESSION = "Destroy session"
++local PREVIEW_NS = vim.api.nvim_create_namespace("agentic-hud-preview")
 +
 +--- @class agentic.ui.SessionHud.Target
 +--- @field kind "session"|"subagent"
@@ -1422,11 +1480,16 @@ index 0000000..b2140b8
 +--- @field _list_winid? integer
 +--- @field _preview_bufnr? integer
 +--- @field _preview_winid? integer
++--- @field _displayed_chat_bufnr? integer
++--- @field _mapped_chat_bufnr? integer
++--- @field _saved_chat_tab_map? table
 +--- @field _targets table<integer, agentic.ui.SessionHud.Target>
 +--- @field _selected? agentic.ui.SessionHud.Target
 +--- @field _epoch integer
++--- @field _saved_windows? table<integer, table>
 +local SessionHud = {}
 +SessionHud.__index = SessionHud
++SessionHud.preserves_chat_buffer = true
 +
 +local STATUS_ICONS = {
 +    starting = "◌",
@@ -1454,15 +1517,28 @@ index 0000000..b2140b8
 +    end
 +end
 +
-+local function append_messages(lines, messages)
++local function append_messages(lines, messages, highlights)
++    local function heading(label, group)
++        if lines[#lines] ~= "" then
++            lines[#lines + 1] = ""
++        end
++        lines[#lines + 1] = label
++        highlights[#lines] = group
++        lines[#lines + 1] = ""
++    end
 +    for _, message in ipairs(messages) do
++        local start = #lines + 1
 +        if message.type == "agent" then
++            heading("● Agent", "Title")
++            append_text(lines, message.text)
++        elseif message.type == "user" then
++            heading("● You", "Question")
 +            append_text(lines, message.text)
 +        elseif message.type == "thought" then
-+            lines[#lines + 1] = "thinking:"
++            heading("◌ Thinking", "Comment")
 +            append_text(lines, message.text)
 +        elseif message.type == "plan" then
-+            lines[#lines + 1] = "plan:"
++            heading("≡ Plan", "Special")
 +            for _, entry in ipairs(message.entries or {}) do
 +                lines[#lines + 1] = string.format(
 +                    "  [%s] %s",
@@ -1471,6 +1547,7 @@ index 0000000..b2140b8
 +                )
 +            end
 +        elseif message.type == "tool_call" then
++            heading("↳ Tool", "Comment")
 +            lines[#lines + 1] = string.format(
 +                "%s: %s [%s]",
 +                single_line(message.kind or "tool"),
@@ -1481,7 +1558,13 @@ index 0000000..b2140b8
 +                append_text(lines, body_line, "  ")
 +            end
 +        end
++        if message.type == "thought" or message.type == "tool_call" then
++            for row = start, #lines do
++                highlights[row] = highlights[row] or "Comment"
++            end
++        end
 +    end
++    lines[#lines + 1] = ""
 +end
 +
 +--- @param filetype string
@@ -1501,13 +1584,16 @@ index 0000000..b2140b8
 +--- @return string[] list_lines
 +--- @return table<integer, agentic.ui.SessionHud.Target> targets
 +--- @return string[] preview_lines
++--- @return table<integer, string> preview_highlights
 +function SessionHud.build_sections(sessions, selected)
 +    table.sort(sessions, function(left, right)
 +        return left.session_key < right.session_key
 +    end)
 +    local list_lines = {
 +        "Agent HUD",
-+        "j/k navigate  Enter open/inspect  e/R rename  D kill  Tab output  r refresh  q close",
++        "j/k navigate  Enter open/inspect  e/R rename  D destroy",
++        "Tab chat  r refresh  q/Esc close",
++        "",
 +        "",
 +    }
 +    local targets = {}
@@ -1572,6 +1658,7 @@ index 0000000..b2140b8
 +    end
 +
 +    local preview_lines = {}
++    local preview_highlights = {}
 +    if selected_child then
 +        preview_lines[#preview_lines + 1] = "Subagent: "
 +            .. single_line(selected_child.name)
@@ -1580,7 +1667,7 @@ index 0000000..b2140b8
 +        preview_lines[#preview_lines + 1] = "Status: "
 +            .. single_line(selected_child.state)
 +        preview_lines[#preview_lines + 1] = ""
-+        append_messages(preview_lines, selected_child.messages)
++        append_messages(preview_lines, selected_child.messages, preview_highlights)
 +    elseif selected_session then
 +        preview_lines[#preview_lines + 1] = "Session: "
 +            .. (
@@ -1591,13 +1678,48 @@ index 0000000..b2140b8
 +        preview_lines[#preview_lines + 1] = "Status: "
 +            .. single_line(selected_session:get_navigation_status())
 +        preview_lines[#preview_lines + 1] = ""
-+        append_messages(preview_lines, selected_session.chat_history.messages)
++        append_messages(preview_lines, selected_session.chat_history.messages, preview_highlights)
 +    else
 +        preview_lines[#preview_lines + 1] =
 +            "Select a session or subagent to inspect its output."
 +    end
 +
-+    return list_lines, targets, preview_lines
++    if selected_session then
++        local state = selected_session.session_state
++        local function value(method)
++            return state and state[method](state) or "unknown"
++        end
++        list_lines[#list_lines + 1] = ""
++        list_lines[#list_lines + 1] = single_line(
++            string.format(
++                "Provider: %s  Model: %s  Effort: %s",
++                selected_session.provider_name or "unknown",
++                state and (state:get_model_name() or state:get_model_id())
++                    or "unknown",
++                state
++                        and (state:get_thought_level_name() or state:get_thought_level_id())
++                    or "unknown"
++            )
++        )
++        list_lines[#list_lines + 1] = single_line(
++            string.format(
++                "Mode: %s  Context: %s / %s  Cost: %s %s",
++                state and (state:get_mode_name() or state:get_mode_id())
++                    or "unknown",
++                value("get_context_used"),
++                value("get_context_size"),
++                value("get_cost_amount"),
++                state and state:get_cost_currency() or ""
++            )
++        )
++        list_lines[#list_lines + 1] = "Session ID: "
++            .. single_line(selected_session.session_id or "starting")
++        if selected_child then
++            list_lines[#list_lines + 1] =
++                "Model / effort above belong to the parent session."
++        end
++    end
++    return list_lines, targets, preview_lines, preview_highlights
 +end
 +
 +--- @param sessions agentic.SessionManager[]
@@ -1643,23 +1765,36 @@ index 0000000..b2140b8
 +    --- @cast list_winid integer
 +    --- @cast preview_winid integer
 +    local cursor = vim.api.nvim_win_get_cursor(list_winid)
++    local previous = self._selected
 +    self._selected = self._targets[cursor[1]] or self._selected
-+    local list_lines, targets, preview_lines = SessionHud.build_sections(
-+        require("agentic.session_registry").list(),
-+        self._selected
-+    )
-+    local preview_view
-+    if not reset_preview then
-+        preview_view = vim.api.nvim_win_call(preview_winid, vim.fn.winsaveview)
++    reset_preview = reset_preview
++        or not vim.deep_equal(previous, self._selected)
++    local sessions = require("agentic.session_registry").list()
++    local list_lines, targets, preview_lines, preview_highlights =
++        SessionHud.build_sections(sessions, self._selected)
++    -- Keep the complete command help visible, with breathing room before the
++    -- choices. Details remain in the normal status bar while the picker is open.
++    local choices = vim.list_slice(list_lines, 1, 5)
++    local choice_targets = {}
++    for row, line in ipairs(list_lines) do
++        if targets[row] then
++            choices[#choices + 1] = line
++            choice_targets[#choices] = targets[row]
++        end
 +    end
++    list_lines, targets = choices, choice_targets
++    vim.wo[list_winid][0].winbar = "%#Comment# Sessions"
 +    self._targets = targets
 +    BufHelpers.with_modifiable(list_bufnr, function(bufnr)
 +        vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, list_lines)
 +    end)
-+    BufHelpers.with_modifiable(preview_bufnr, function(bufnr)
-+        vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, preview_lines)
-+    end)
-+    local target_line = 4
++
++    -- Browsing the picker must not swap the visible chat to another session or
++    -- a synthetic subagent preview. Only an explicit session activation does.
++    self:_map_chat_tab(vim.api.nvim_win_get_buf(preview_winid))
++    self._displayed_chat_bufnr = vim.api.nvim_win_get_buf(preview_winid)
++    self._source.widget:render_header("chat")
++    local target_line = 1
 +    for line, target in pairs(targets) do
 +        if
 +            self._selected
@@ -1672,13 +1807,39 @@ index 0000000..b2140b8
 +        end
 +    end
 +    vim.api.nvim_win_set_cursor(list_winid, { target_line, 0 })
-+    if preview_view then
-+        vim.api.nvim_win_call(preview_winid, function()
-+            vim.fn.winrestview(preview_view)
-+        end)
-+    else
-+        vim.api.nvim_win_set_cursor(preview_winid, { 1, 0 })
++end
++
++function SessionHud:_unmap_chat_tab()
++    local bufnr = self._mapped_chat_bufnr
++    if not bufnr or not vim.api.nvim_buf_is_valid(bufnr) then
++        self._mapped_chat_bufnr = nil
++        self._saved_chat_tab_map = nil
++        return
 +    end
++    pcall(vim.keymap.del, "n", "<Tab>", { buffer = bufnr })
++    if self._saved_chat_tab_map and self._saved_chat_tab_map.buffer == 1 then
++        vim.api.nvim_buf_call(bufnr, function()
++            pcall(vim.fn.mapset, "n", false, self._saved_chat_tab_map)
++        end)
++    end
++    self._mapped_chat_bufnr = nil
++    self._saved_chat_tab_map = nil
++end
++
++function SessionHud:_map_chat_tab(bufnr)
++    if self._mapped_chat_bufnr == bufnr then
++        return
++    end
++    self:_unmap_chat_tab()
++    self._saved_chat_tab_map = vim.api.nvim_buf_call(bufnr, function()
++        return vim.fn.maparg("<Tab>", "n", false, true)
++    end)
++    self._mapped_chat_bufnr = bufnr
++    BufHelpers.keymap_set(bufnr, "n", "<Tab>", function()
++        if BufHelpers.is_win_usable(self._list_winid) then
++            vim.api.nvim_set_current_win(self._list_winid)
++        end
++    end)
 +end
 +
 +function SessionHud:_move(delta)
@@ -1720,12 +1881,30 @@ index 0000000..b2140b8
 +    end
 +    self._selected = target
 +    if target.kind == "subagent" then
-+        self:_render(true)
++        Logger.notify(
++            "Subagent previews are disabled while preserving the chat buffer",
++            vim.log.levels.INFO
++        )
 +        return
 +    end
 +    local key = target.session_key
 +    self:close()
 +    require("agentic.session_registry").show_session(key)
++end
++
++-- User dismissal keeps the highlighted session; internal teardown only closes.
++function SessionHud:finish()
++    local winid = self._list_winid
++    if not BufHelpers.is_win_usable(winid) then
++        self:close()
++        return
++    end
++    local target = self._targets[vim.api.nvim_win_get_cursor(winid)[1]] or self._selected
++    self:close()
++    local registry = require("agentic.session_registry")
++    if target and registry.get(target.session_key) then
++        registry.show_session(target.session_key)
++    end
 +end
 +
 +function SessionHud:_destroy_selected()
@@ -1791,12 +1970,12 @@ index 0000000..b2140b8
 +                break
 +            end
 +        end
-+        self._selected = selected
-+                and {
-+                    kind = "session",
-+                    session_key = selected.session_key,
-+                }
-+            or nil
++        local selected_key = selected and selected.session_key
++        if selected_key then
++            self._selected = { kind = "session", session_key = selected_key }
++        else
++            self._selected = nil
++        end
 +        self:_render(true)
 +    end)
 +end
@@ -1864,71 +2043,70 @@ index 0000000..b2140b8
 +            self:close()
 +            return
 +        end
++        if vim.api.nvim_win_get_buf(self._list_winid) ~= self._list_bufnr
++            or vim.api.nvim_win_get_buf(self._preview_winid) ~= self._displayed_chat_bufnr then
++            self:close()
++            return
++        end
 +        self:_render()
 +        vim.defer_fn(refresh, 300)
 +    end
 +    vim.defer_fn(refresh, 300)
 +end
 +
++-- Temporarily borrow the two native panels. Their original buffers (including
++-- unsent prompts) remain owned by the source session and continue receiving updates.
 +function SessionHud:open()
-+    local anchor = self._source.widget.win_nrs.input
-+        or self._source.widget.win_nrs.chat
-+    if not BufHelpers.is_win_usable(anchor) then
++    if self:is_open() then return end
++    local windows = self._source.widget.win_nrs
++    if not BufHelpers.is_win_usable(windows.input)
++        or not BufHelpers.is_win_usable(windows.chat) then
 +        return
 +    end
-+    --- @cast anchor integer
-+    local pos = vim.api.nvim_win_get_position(anchor)
-+    local anchor_height = vim.api.nvim_win_get_height(anchor)
-+    local bottom = pos[1] + anchor_height
-+    local outer_height = math.min(
-+        math.max(anchor_height, math.floor(vim.o.lines * 0.6)),
-+        math.max(6, bottom - 1)
-+    )
-+    local content_height = math.max(2, outer_height - 4)
-+    local list_lines = SessionHud.build_sections(
-+        require("agentic.session_registry").list(),
-+        self._selected
-+    )
-+    local list_height = math.min(
-+        #list_lines,
-+        math.max(1, content_height - math.min(4, content_height - 1))
-+    )
-+    local preview_height = math.max(1, content_height - list_height)
-+    local width = math.max(1, vim.api.nvim_win_get_width(anchor) - 2)
-+    local top = math.max(0, bottom - outer_height)
++    self._list_winid = windows.input
++    self._preview_winid = windows.chat
 +    self._list_bufnr = create_buffer("agentic-hud-list")
 +    self._preview_bufnr = create_buffer("agentic-hud-preview")
-+    self._list_winid = vim.api.nvim_open_win(self._list_bufnr, true, {
-+        relative = "editor",
-+        row = top,
-+        col = pos[2],
-+        width = width,
-+        height = list_height,
-+        style = "minimal",
-+        border = "rounded",
-+        title = " Agent HUD ",
-+        title_pos = "center",
-+    })
-+    self._preview_winid = vim.api.nvim_open_win(self._preview_bufnr, false, {
-+        relative = "editor",
-+        row = top + list_height + 2,
-+        col = pos[2],
-+        width = width,
-+        height = preview_height,
-+        style = "minimal",
-+        border = "rounded",
-+        title = " Activity ",
-+        title_pos = "center",
-+    })
++    self._saved_windows = {}
++    for _, panel in ipairs({
++        { winid = self._list_winid, temporary = self._list_bufnr },
++        { winid = self._preview_winid },
++    }) do
++        local winid, bufnr = panel.winid, panel.temporary
++        local options = {}
++        for _, name in ipairs({ "winbar", "wrap", "linebreak", "breakindent", "cursorline", "number", "relativenumber", "statuscolumn" }) do
++            options[name] = vim.wo[winid][name]
++        end
++        self._saved_windows[winid] = {
++            bufnr = vim.api.nvim_win_get_buf(winid),
++            temporary = bufnr,
++            expected = vim.w[winid].agentic_bufnr,
++            view = vim.api.nvim_win_call(winid, vim.fn.winsaveview),
++            options = options,
++        }
++        -- BufferGuard must recognize this intentional panel replacement.
++        vim.w[winid].agentic_bufnr = nil
++        if bufnr then
++            vim.api.nvim_win_set_buf(winid, bufnr)
++            vim.wo[winid][0].winbar = ""
++            vim.wo[winid][0].number = false
++            vim.wo[winid][0].relativenumber = false
++            vim.wo[winid][0].statuscolumn = ""
++        end
++    end
++    vim.api.nvim_set_current_win(self._list_winid)
 +    vim.cmd("stopinsert")
 +    vim.wo[self._list_winid][0].cursorline = true
 +    vim.wo[self._list_winid][0].wrap = false
-+    vim.wo[self._preview_winid][0].wrap = false
++    vim.wo[self._preview_winid][0].wrap = true
++    vim.wo[self._preview_winid][0].linebreak = true
++    vim.wo[self._preview_winid][0].breakindent = true
++    vim.wo[self._preview_winid][0].cursorline = false
 +    BufHelpers.keymap_set(self._list_bufnr, "n", "q", function()
-+        self:close()
++        self:finish()
 +    end)
 +    BufHelpers.keymap_set(self._list_bufnr, "n", "<Esc>", function()
-+        self:close()
++        self:finish()
 +    end)
 +    BufHelpers.keymap_set(self._list_bufnr, "n", "<CR>", function()
 +        self:_activate()
@@ -1957,9 +2135,12 @@ index 0000000..b2140b8
 +            vim.api.nvim_set_current_win(preview_winid)
 +        end
 +    end)
-+    for _, key in ipairs({ "q", "<Esc>" }) do
++    BufHelpers.keymap_set(self._list_bufnr, "n", "<localleader>s", function()
++        self:finish()
++    end)
++    for _, key in ipairs({ "q", "<Esc>", "<localleader>s" }) do
 +        BufHelpers.keymap_set(self._preview_bufnr, "n", key, function()
-+            self:close()
++            self:finish()
 +        end)
 +    end
 +    BufHelpers.keymap_set(self._preview_bufnr, "n", "<Tab>", function()
@@ -1978,14 +2159,38 @@ index 0000000..b2140b8
 +
 +function SessionHud:close()
 +    self._epoch = self._epoch + 1
-+    local winids = { self._preview_winid, self._list_winid }
++    self:_unmap_chat_tab()
++    local list_winid = self._list_winid
++    local focused = vim.api.nvim_get_current_win()
++    local restore_focus = focused == list_winid or focused == self._preview_winid
++    for winid, saved in pairs(self._saved_windows or {}) do
++        if BufHelpers.is_win_usable(winid) then
++            if (not saved.temporary
++                    or vim.api.nvim_win_get_buf(winid) == saved.temporary
++                    or vim.api.nvim_win_get_buf(winid) == self._displayed_chat_bufnr)
++                and vim.api.nvim_buf_is_valid(saved.bufnr) then
++                vim.w[winid].agentic_bufnr = saved.expected
++                vim.api.nvim_win_set_buf(winid, saved.bufnr)
++                for name, value in pairs(saved.options) do
++                    vim.wo[winid][0][name] = value
++                end
++                vim.api.nvim_win_call(winid, function()
++                    vim.fn.winrestview(saved.view)
++                end)
++            end
++        end
++    end
++    for _, bufnr in ipairs({ self._list_bufnr, self._preview_bufnr }) do
++        if vim.api.nvim_buf_is_valid(bufnr) then
++            vim.api.nvim_buf_delete(bufnr, { force = true })
++        end
++    end
++    self._saved_windows = nil
 +    self._list_winid, self._list_bufnr = nil, nil
 +    self._preview_winid, self._preview_bufnr = nil, nil
-+    for _, winid in ipairs(winids) do
-+        if BufHelpers.is_win_usable(winid) then
-+            --- @cast winid integer
-+            vim.api.nvim_win_close(winid, true)
-+        end
++    self._displayed_chat_bufnr = nil
++    if restore_focus and BufHelpers.is_win_usable(list_winid) then
++        vim.api.nvim_set_current_win(list_winid)
 +    end
 +end
 +
@@ -1998,11 +2203,12 @@ index 0000000..b2140b8
 +return SessionHud
 diff --git a/lua/agentic/ui/session_hud.test.lua b/lua/agentic/ui/session_hud.test.lua
 new file mode 100644
-index 0000000..1fa27be
+index 0000000..7a69595
 --- /dev/null
 +++ b/lua/agentic/ui/session_hud.test.lua
-@@ -0,0 +1,400 @@
+@@ -0,0 +1,447 @@
 +--- @diagnostic disable: missing-fields, assign-type-mismatch
++--- @diagnostic disable: invisible, param-type-mismatch, duplicate-set-field
 +local assert = require("tests.helpers.assert")
 +local spy = require("tests.helpers.spy")
 +local SessionHud = require("agentic.ui.session_hud")
@@ -2014,12 +2220,19 @@ index 0000000..1fa27be
 +    local registry_list_stub
 +    local original_ui_select
 +    local original_ui_input
++    local test_chat
++
++    before_each(function()
++        test_chat = vim.api.nvim_get_current_win()
++        vim.cmd("belowright 8new")
++    end)
 +
 +    after_each(function()
 +        if open_hud then
 +            open_hud:close()
 +            open_hud = nil
 +        end
++        vim.cmd("only!")
 +        if registry_list_stub then
 +            registry_list_stub:revert()
 +            registry_list_stub = nil
@@ -2059,6 +2272,19 @@ index 0000000..1fa27be
 +        }
 +    end
 +
++    local function attach_widget(item, chat, input, chat_bufnr)
++        item.widget = {
++            win_nrs = { chat = chat, input = input },
++            buf_nrs = {
++                chat = chat_bufnr or vim.api.nvim_win_get_buf(chat),
++            },
++            render_header = function() end,
++            get_visible_tab_id = function()
++                return vim.api.nvim_get_current_tabpage()
++            end,
++        }
++    end
++
 +    it(
 +        "renders sessions and nested subagents with stable row targets",
 +        function()
@@ -2090,18 +2316,22 @@ index 0000000..1fa27be
 +                subagent_id = "child-1",
 +            })
 +
-+            assert.equal("● [working] Session 1", lines[4])
++            assert.truthy(lines[2]:find("e/R rename", 1, true))
++            assert.truthy(lines[3]:find("r refresh", 1, true))
++            assert.equal("", lines[4])
++            assert.equal("", lines[5])
++            assert.equal("● [working] Session 1", lines[6])
 +            assert.equal(
 +                "  └─ ● [running] researcher — Inspect tests",
-+                lines[5]
++                lines[7]
 +            )
 +            assert.equal(
 +                "     └─ ✓ [completed] reviewer — Review result",
-+                lines[6]
++                lines[8]
 +            )
-+            assert.equal("○ [idle] Session 2", lines[7])
-+            assert.equal(1, targets[4].session_key)
-+            assert.equal("child-1", targets[5].subagent_id)
++            assert.equal("○ [idle] Session 2", lines[9])
++            assert.equal(1, targets[6].session_key)
++            assert.equal("child-1", targets[7].subagent_id)
 +        end
 +    )
 +
@@ -2207,75 +2437,106 @@ index 0000000..1fa27be
 +        vim.api.nvim_buf_delete(bufnr, { force = true })
 +    end)
 +
-+    it("keeps the session list fixed while the preview scrolls", function()
-+        local messages = {}
-+        for index = 1, 80 do
-+            messages[#messages + 1] = {
-+                type = "agent",
-+                text = "output line " .. index,
-+            }
++    it(
++        "reuses prompt and chat windows and restores their buffers",
++        function()
++            local source = session(1, "working")
++            local chat = vim.api.nvim_get_current_win()
++            vim.cmd("belowright 5split")
++            local input = vim.api.nvim_get_current_win()
++            attach_widget(source, chat, input)
++            local chat_buf = vim.api.nvim_win_get_buf(chat)
++            local input_buf = vim.api.nvim_win_get_buf(input)
++            local windows = #vim.api.nvim_tabpage_list_wins(0)
++            local ConfigOptions = require("agentic.acp.agent_config_options")
++            source.session_state = require("agentic.acp.session_state"):new(
++                ConfigOptions:new({}, {}),
++                "codex-acp"
++            )
++            source.session_state._config_options.model =
++                { currentValue = "test-model", options = {} }
++            source.session_state._config_options.thought_level =
++                { currentValue = "high", options = {} }
++            registry_list_stub =
++                spy.stub(require("agentic.session_registry"), "list")
++            registry_list_stub:returns({ source })
++            open_hud = SessionHud:new(source)
++            open_hud:open()
++            local list = open_hud._list_winid
++            local preview = open_hud._preview_winid
++            assert.equal(input, list)
++            assert.equal(chat, preview)
++            assert.equal(chat_buf, vim.api.nvim_win_get_buf(preview))
++            assert.equal(windows, #vim.api.nvim_tabpage_list_wins(0))
++            assert.equal("", vim.api.nvim_win_get_config(list).relative)
++            local lines = SessionHud.build_sections({ source }, {
++                kind = "session", session_key = source.session_key,
++            })
++            assert.is_false(vim.bo[open_hud._list_bufnr].modifiable)
++            assert.is_false(vim.bo[open_hud._preview_bufnr].modifiable)
++            open_hud:close()
++            assert.equal(chat_buf, vim.api.nvim_win_get_buf(chat))
++            assert.equal(input_buf, vim.api.nvim_win_get_buf(input))
++            vim.api.nvim_win_close(input, true)
++            local rendered = table.concat(lines, "\n")
++            assert.truthy(rendered:find("test-model", 1, true))
++            assert.truthy(rendered:find("high", 1, true))
++            assert.truthy(rendered:find("codex-acp", 1, true))
 +        end
++    )
 +
-+        local source = session(1, "working")
-+        source.chat_history.messages = messages
-+        source.widget = {
-+            win_nrs = { input = vim.api.nvim_get_current_win() },
-+            get_visible_tab_id = function()
-+                return vim.api.nvim_get_current_tabpage()
-+            end,
++    it("includes user messages in the read-only transcript", function()
++        local source = session(1, "idle")
++        source.chat_history.messages = {
++            { type = "user", text = "Please inspect this file" },
++            { type = "agent", text = "Here is the result" },
 +        }
-+        registry_list_stub =
-+            spy.stub(require("agentic.session_registry"), "list")
-+        registry_list_stub:returns({ source })
-+
-+        open_hud = SessionHud:new(source --[[@as agentic.SessionManager]])
-+        open_hud:open()
-+
-+        local list_win
-+        local preview_win
-+        for _, winid in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
-+            local bufnr = vim.api.nvim_win_get_buf(winid)
-+            local filetype = vim.bo[bufnr].filetype
-+            if filetype == "agentic-hud-list" then
-+                list_win = winid
-+            elseif filetype == "agentic-hud-preview" then
-+                preview_win = winid
-+            end
-+        end
-+
-+        assert.is_not_nil(list_win)
-+        assert.is_not_nil(preview_win)
-+        --- @cast list_win integer
-+        --- @cast preview_win integer
-+        local list_view = vim.api.nvim_win_call(list_win, vim.fn.winsaveview)
-+        vim.api.nvim_win_set_cursor(preview_win, { #messages + 3, 0 })
-+        vim.api.nvim_win_call(preview_win, function()
-+            vim.cmd("normal! zb")
-+        end)
-+        local preview_view =
-+            vim.api.nvim_win_call(preview_win, vim.fn.winsaveview)
-+        --- @diagnostic disable-next-line: invisible
-+        open_hud:_render()
-+        local refreshed_preview_view =
-+            vim.api.nvim_win_call(preview_win, vim.fn.winsaveview)
-+
-+        assert.equal(1, list_view.topline)
-+        assert.is_true(preview_view.topline > 1)
-+        assert.equal(preview_view.topline, refreshed_preview_view.topline)
-+        assert.is_true(
-+            vim.api.nvim_win_get_position(list_win)[1]
-+                < vim.api.nvim_win_get_position(preview_win)[1]
++        local _, _, preview = SessionHud.build_sections({ source }, {
++            kind = "session",
++            session_key = 1,
++        })
++        assert.truthy(
++            table
++                .concat(preview, "\n")
++                :find(
++                    "● You\n\nPlease inspect this file\n\n● Agent\n\nHere is the result",
++                    1,
++                    true
++                )
 +        )
++    end)
++
++    it("keeps the visible chat buffer while browsing and preserves the draft", function()
++        local source = session(1, "idle")
++        local other = session(2, "idle")
++        local input = vim.api.nvim_get_current_win()
++        local draft = vim.api.nvim_get_current_buf()
++        vim.api.nvim_buf_set_lines(draft, 0, -1, false, { "Unsent draft" })
++        local source_chat = vim.api.nvim_win_get_buf(test_chat)
++        local other_chat = vim.api.nvim_create_buf(false, true)
++        vim.api.nvim_buf_set_lines(source_chat, 0, -1, false, { "First chat" })
++        vim.api.nvim_buf_set_lines(other_chat, 0, -1, false, { "Second chat" })
++        attach_widget(source, test_chat, input, source_chat)
++        attach_widget(other, nil, nil, other_chat)
++        registry_list_stub = spy.stub(require("agentic.session_registry"), "list")
++        registry_list_stub:returns({ source, other })
++        open_hud = SessionHud:new(source)
++        open_hud:open()
++        assert.equal(7, vim.api.nvim_buf_line_count(open_hud._list_bufnr))
++        vim.cmd("normal j")
++        assert.equal(input, vim.api.nvim_get_current_win())
++        assert.equal(source_chat, vim.api.nvim_win_get_buf(test_chat))
++        vim.cmd("normal k")
++        assert.equal(source_chat, vim.api.nvim_win_get_buf(test_chat))
++        open_hud:close()
++        assert.equal(draft, vim.api.nvim_win_get_buf(input))
++        assert.same({ "Unsent draft" }, vim.api.nvim_buf_get_lines(draft, 0, -1, false))
 +    end)
 +
 +    it("uses only Tab to switch between HUD panes", function()
 +        local source = session(1, "working")
-+        source.widget = {
-+            win_nrs = { input = vim.api.nvim_get_current_win() },
-+            get_visible_tab_id = function()
-+                return vim.api.nvim_get_current_tabpage()
-+            end,
-+        }
++        vim.bo[vim.api.nvim_win_get_buf(test_chat)].filetype = "agentic-chat"
++        attach_widget(source, test_chat, vim.api.nvim_get_current_win())
 +        registry_list_stub =
 +            spy.stub(require("agentic.session_registry"), "list")
 +        registry_list_stub:returns({ source })
@@ -2285,7 +2546,7 @@ index 0000000..1fa27be
 +
 +        local mapped = {
 +            ["agentic-hud-list"] = {},
-+            ["agentic-hud-preview"] = {},
++            ["agentic-chat"] = {},
 +        }
 +        for _, winid in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
 +            local bufnr = vim.api.nvim_win_get_buf(winid)
@@ -2298,19 +2559,15 @@ index 0000000..1fa27be
 +        end
 +
 +        assert.is_true(mapped["agentic-hud-list"]["<Tab>"])
-+        assert.is_true(mapped["agentic-hud-preview"]["<Tab>"])
++        assert.is_true(mapped["agentic-chat"]["<Tab>"])
 +        assert.is_nil(mapped["agentic-hud-list"].l)
-+        assert.is_nil(mapped["agentic-hud-preview"].h)
++        assert.is_nil(mapped["agentic-chat"].h)
 +    end)
 +
 +    it("kills the selected top-level session with D", function()
 +        local sessions = { session(1, "idle"), session(2, "working") }
-+        sessions[1].widget = {
-+            win_nrs = { input = vim.api.nvim_get_current_win() },
-+            get_visible_tab_id = function()
-+                return vim.api.nvim_get_current_tabpage()
-+            end,
-+        }
++        attach_widget(sessions[1], test_chat, vim.api.nvim_get_current_win())
++        attach_widget(sessions[2], nil, nil, vim.api.nvim_create_buf(false, true))
 +        local registry = require("agentic.session_registry")
 +        registry_list_stub = spy.stub(registry, "list")
 +        registry_list_stub:invokes(function()
@@ -2376,12 +2633,7 @@ index 0000000..1fa27be
 +            return true
 +        end)
 +        source.rename = rename_spy
-+        source.widget = {
-+            win_nrs = { input = vim.api.nvim_get_current_win() },
-+            get_visible_tab_id = function()
-+                return vim.api.nvim_get_current_tabpage()
-+            end,
-+        }
++        attach_widget(source, test_chat, vim.api.nvim_get_current_win())
 +        local registry = require("agentic.session_registry")
 +        registry_list_stub = spy.stub(registry, "list")
 +        registry_list_stub:returns({ source })
@@ -2403,10 +2655,10 @@ index 0000000..1fa27be
 +    end)
 +end)
 diff --git a/tests/integration/test_multi_session.lua b/tests/integration/test_multi_session.lua
-index 70360e4..47f0a31 100644
+index 70360e4..af16727 100644
 --- a/tests/integration/test_multi_session.lua
 +++ b/tests/integration/test_multi_session.lua
-@@ -543,35 +543,28 @@ end)()
+@@ -543,35 +543,65 @@ end)()
          assert.same({ 2, 3, 1 }, seen)
      end)
  
@@ -2416,7 +2668,31 @@ index 70360e4..47f0a31 100644
          child.lua([[ require("agentic.session_registry").show_session(1) ]])
          child.flush()
  
--        child.lua([[
++        local window_count = #child.api.nvim_tabpage_list_wins(0)
++        child.lua([[ require("agentic").select_session() ]])
++        child.flush()
++
++        assert.equal("agentic-hud-list", child.bo.filetype)
++        assert.equal(window_count, #child.api.nvim_tabpage_list_wins(0))
++        assert.equal("", child.api.nvim_win_get_config(0).relative)
++        local lines = child.api.nvim_buf_get_lines(0, 0, 8, false)
++        assert.truthy(lines[6]:find("Untitled (1)", 1, true))
++        assert.truthy(lines[7]:find("Untitled (2)", 1, true))
++
++        child.type_keys("<Tab>")
++        assert.equal("AgenticChat", child.bo.filetype)
++        child.type_keys("<Tab>")
++        assert.equal("agentic-hud-list", child.bo.filetype)
++
++        child.type_keys("j", "<CR>")
++        child.flush()
++
++        assert.equal(2, visible_key())
++    end)
++
++    it("keeps the highlighted session on close and preserves each session draft", function()
++        create_sessions(2)
+         child.lua([[
 -            _G.labels = {}
 -            vim.ui.select = function(items, opts, on_choice)
 -                for _, item in ipairs(items) do
@@ -2429,31 +2705,42 @@ index 70360e4..47f0a31 100644
 -                    end
 -                end
 -            end
--            require("agentic").select_session()
--        ]])
++            local source = require("agentic.session_registry").current()
++            _G.picker_input = source.widget.win_nrs.input
++            _G.picker_chat = source.widget.win_nrs.chat
++            _G.picker_draft = source.widget.buf_nrs.input
++            _G.picker_original_chat = source.widget.buf_nrs.chat
++            vim.api.nvim_buf_set_lines(_G.picker_draft, 0, -1, false, { "Keep my draft" })
+             require("agentic").select_session()
+         ]])
++        child.type_keys("j")
++        vim.uv.sleep(350)
++        assert.equal("agentic-hud-list", child.bo.filetype)
++        child.type_keys("q")
++        child.flush()
++        assert.equal(1, visible_key())
++        local draft = child.lua_get("_G.picker_draft")
++        assert.same({ "Keep my draft" }, child.api.nvim_buf_get_lines(draft, 0, -1, false))
++        assert.equal(2, session_count())
++        child.lua([[ require("agentic").select_session() ]])
++        child.type_keys("j")
 +        child.lua([[ require("agentic").select_session() ]])
          child.flush()
- 
--        assert.equal(2, visible_key())
-+        assert.equal("agentic-hud-list", child.bo.filetype)
-+        local lines = child.api.nvim_buf_get_lines(0, 0, 6, false)
-+        assert.truthy(lines[4]:find("Untitled (1)", 1, true))
-+        assert.truthy(lines[5]:find("Untitled (2)", 1, true))
- 
+-
+         assert.equal(2, visible_key())
+-
 -        -- `list()` puts this tab's visible session first; only it gets the marker.
 -        local labels = child.lua_get([[_G.labels]])
 -        assert.equal(2, #labels)
 -        assert.truthy(labels[1]:match("^● "))
 -        assert.truthy(labels[2]:match("^  "))
-+        child.type_keys("<Tab>")
-+        assert.equal("agentic-hud-preview", child.bo.filetype)
-+        child.type_keys("<Tab>")
-+        assert.equal("agentic-hud-list", child.bo.filetype)
-+
-+        child.type_keys("j", "<CR>")
++        assert.equal(draft, child.api.nvim_get_current_buf())
++        assert.equal(draft, child.lua_get("vim.w[0].agentic_bufnr"))
++        child.lua([[ require("agentic").select_session() ]])
++        child.type_keys("j", "<Esc>")
 +        child.flush()
-+
-+        assert.equal(2, visible_key())
++        assert.equal(1, visible_key())
++        assert.equal(2, session_count())
      end)
  
      it("destroys the resolved session and keeps the others", function()

@@ -188,7 +188,7 @@ TOTAL_STAGES=1
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 DATA_HOME=${XDG_DATA_HOME:-"$HOME/.local/share"}
-CODEX_BIN="$DATA_HOME/nvim/agentic-vim/bin/codex"
+CODEX_BIN="$DATA_HOME/agentic-vim/bin/codex"
 case "$(uname -s):$(uname -m)" in
   Linux:x86_64) NODE_PLATFORM="linux-x64" ;;
   Linux:aarch64|Linux:arm64) NODE_PLATFORM="linux-arm64" ;;

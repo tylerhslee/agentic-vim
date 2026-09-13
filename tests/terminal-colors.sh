@@ -4,12 +4,32 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd -P)
 TEST_DIR=$(mktemp -d "${TMPDIR:-/tmp}/agentic-colors-test.XXXXXX")
 trap 'rm -rf "$TEST_DIR"' EXIT
+NVIM=${NVIM:-nvim}
+export NVIM NVIM_APPNAME=agentic-vim
+export XDG_CONFIG_HOME="$TEST_DIR/config"
 export XDG_STATE_HOME="$TEST_DIR/state" XDG_CACHE_HOME="$TEST_DIR/cache"
 export NVIM_LOG_FILE="$TEST_DIR/nvim.log" NVIM_CODEX_USAGE_DISABLED=1
 export AGENTIC_COLOR_TEST="$TEST_DIR/check.lua"
 cat > "$AGENTIC_COLOR_TEST" <<'LUA'
 local ok, err = pcall(function()
   assert(vim.o.termguicolors == (vim.env.EXPECT_RGB == "1"), "Config overrode terminal color mode")
+  assert(vim.fn.maparg("jj", "i") == "<Esc>", "Insert-mode jj mapping is missing")
+  assert(vim.fn.maparg("<leader>aa", "n") ~= "", "Agentic chat mapping is missing")
+  assert(type(require("agentic").toggle) == "function", "Agentic chat module is unavailable")
+  local registry = require("agentic.session_registry")
+  local header = require("agentic.config").headers.chat
+  local state = {}
+  local saved_sessions = registry.sessions
+  local session = { session_state = state, chat_history = { title = "Fix 50%\nregression" } }
+  registry.sessions = { [1] = session }
+  local parts = { title = "󰻞 Agentic Chat" }
+  assert(header(parts, state) == "󰻞 Fix 50%% regression", "Chat header lost session title or escaping")
+  session.chat_history.title = "Renamed session"
+  assert(header(parts, state) == "󰻞 Renamed session", "Chat header retained a stale title")
+  assert(header(parts, {}) == "󰻞 New session", "Chat header used another session's title")
+  session.chat_history.title = ""
+  assert(header(parts, state) == "󰻞 New session", "Untitled chat fallback changed")
+  registry.sessions = saved_sessions
   assert(vim.g.colors_name == "catppuccin-macchiato")
   local normal = vim.api.nvim_get_hl(0, { name = "Normal" })
   assert(normal.bg == 0x202334 and normal.fg == 0xbdc6e5, "RGB palette changed")
@@ -25,16 +45,18 @@ local ok, err = pcall(function()
   vim.cmd("colorscheme catppuccin-macchiato")
   assert(vim.o.termguicolors == (vim.env.EXPECT_RGB == "1"), "Theme reload changed terminal color mode")
   assert(vim.api.nvim_get_hl(0, { name = "Normal" }).ctermbg == 235, "Reload lost fallback")
+  dofile(vim.env.AGENTIC_CHEATSHEET_TEST)
 end)
 if vim.env.AGENTIC_COLOR_RESULT then
   vim.fn.writefile({ ok and "verified" or tostring(err) }, vim.env.AGENTIC_COLOR_RESULT)
 end
 if not ok then print(err); vim.cmd("cquit 1") end
 LUA
+export AGENTIC_CHEATSHEET_TEST="$ROOT/tests/cheatsheet.lua"
 for mode in notermguicolors termguicolors; do
   rgb=0
   [[ "$mode" != termguicolors ]] || rgb=1
-  EXPECT_RGB="$rgb" "${NVIM:-nvim}" --headless -i NONE -u "$ROOT/nvim/init.lua" \
+  EXPECT_RGB="$rgb" "$NVIM" --headless -i NONE -u "$ROOT/nvim/init.lua" \
     --cmd "set runtimepath^=$ROOT/nvim" \
     --cmd "set $mode" '+lua dofile(vim.env.AGENTIC_COLOR_TEST)' +qa
   printf 'PASS: %s palette, styles, links, and reload\n' "$mode"
@@ -75,7 +97,7 @@ for color, override, expected in cases:
     if result.exists():
         result.unlink()
     env["AGENTIC_COLOR_RESULT"] = str(result)
-    command = [env.get("NVIM", "nvim"), "-i", "NONE", "-u", f"{root}/nvim/init.lua",
+    command = [env["NVIM"], "-i", "NONE", "-u", f"{root}/nvim/init.lua",
                "--cmd", f"set runtimepath^={root}/nvim"]
     if override:
         command += ["--cmd", f"set {override}"]

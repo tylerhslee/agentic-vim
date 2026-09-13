@@ -5,6 +5,7 @@
   "description": "Pinned Codex CLI and ACP adapter for the portable Neovim setup",
   "dependencies": {
     "@agentclientprotocol/codex-acp": "1.10.0",
-    "@openai/codex": "0.153.4"
+    "@openai/codex": "0.153.4",
+    "pyright": "1.1.414"
   }
 }

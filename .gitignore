@@ -42,8 +42,10 @@ htmlcov/
 
 # Local dependency/install output
 /provider/node_modules/
+/nvim/nvim-pack-lock.json
 .direnv/
 .envrc
+CLAUDE.local.md
 
 # Operating-system metadata
 .DS_Store

@@ -6,19 +6,21 @@ NVIM_VERSION="0.12.5"
 NODE_VERSION="22.22.2"
 NERD_FONT_VERSION="3.5.1"
 TREE_SITTER_VERSION="0.27.0"
-AGENTIC_PATCH_SHA256="7f6008f0d4341ff1c06eba2d0bfa8997efb67eb8be4a9a5ed964de8504cc24ea"
+AGENTIC_PATCH_FILE_SHA256="be80773140acfc0a9a4f22b16095872ca81b2be64e588b73b555ecec197c5f4f"
+AGENTIC_PATCH_DIFF_SHA256="a4efab4adcb2a25c8478c8498ec469b7b1919cd28faf59f443f3aab58bb550db"
 NERD_FONT_SHA256="04d5e8f903693f9dd13e16f867e994834e681eb3c72c0d337a770dcda09010cf"
 PARSERS="bash css html javascript json lua markdown markdown_inline python toml tsx typescript yaml"
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
+APP_NAME="agentic-vim"
+LAUNCHER_NAME="nvim"
 CONFIG_HOME=${XDG_CONFIG_HOME:-"$HOME/.config"}
 DATA_HOME=${XDG_DATA_HOME:-"$HOME/.local/share"}
 STATE_HOME=${XDG_STATE_HOME:-"$HOME/.local/state"}
 BIN_HOME=${AGENTIC_VIM_BIN_HOME:-"$HOME/.local/bin"}
-NVIM_CONFIG="$CONFIG_HOME/nvim"
-NVIM_DATA="$DATA_HOME/nvim"
-MANAGED_ROOT="$NVIM_DATA/agentic-vim"
-TOOLS_ROOT="$DATA_HOME/agentic-vim/tools"
+NVIM_CONFIG="$CONFIG_HOME/$APP_NAME"
+MANAGED_ROOT="$DATA_HOME/$APP_NAME"
+TOOLS_ROOT="$MANAGED_ROOT/tools"
 PACK_ROOT="$MANAGED_ROOT/nvim-site/pack/agentic-vim"
 PROVIDER_ROOT="$MANAGED_ROOT/provider"
 MANAGED_BIN="$MANAGED_ROOT/bin"
@@ -33,10 +35,10 @@ usage() {
   cat <<'EOF'
 Usage: ./scripts/install.sh [--dry-run] [--force] [--skip-parsers]
 
-Installs the pinned Neovim, plugins, Codex provider, and configuration.
+Installs an isolated Agentic Vim distribution invoked with nvim.
 
   --dry-run       Describe changes without downloading or writing
-  --force         Back up and replace conflicting Neovim/Codex configuration
+  --force         Back up and replace conflicting Agentic Vim files
   --skip-parsers  Skip Tree-sitter parser compilation
 EOF
 }
@@ -188,17 +190,14 @@ if ((DRY_RUN)); then
   say "Would install JetBrainsMono Nerd Font $NERD_FONT_VERSION for the current user."
   say "Would install pinned plugins from nvim/plugins.lock and apply the Agent HUD patch."
   say "Would install the pinned Codex CLI, codex-acp, and Tree-sitter CLI."
-  say "Would link $NVIM_CONFIG to $ROOT/nvim and install portable Codex defaults."
+  say "Would link $NVIM_CONFIG to $ROOT/nvim without changing ~/.config/nvim."
+  say "Would install the isolated Agentic Vim launcher at $BIN_HOME/$LAUNCHER_NAME."
   ((SKIP_PARSERS)) || say "Would compile the configured Tree-sitter parsers."
   exit 0
 fi
 
 preflight_link "$NVIM_CONFIG" "$ROOT/nvim"
-preflight_link "$BIN_HOME/nvim" "$MANAGED_BIN/nvim"
-preflight_link "$BIN_HOME/node" "$NODE_INSTALL/bin/node"
-preflight_link "$BIN_HOME/codex" "$MANAGED_BIN/codex"
-preflight_link "$BIN_HOME/codex-acp" "$MANAGED_BIN/codex-acp"
-preflight_link "$BIN_HOME/tree-sitter" "$TREE_SITTER_INSTALL"
+preflight_link "$BIN_HOME/$LAUNCHER_NAME" "$MANAGED_BIN/nvim"
 
 if [[ -e "$PROVIDER_ROOT" && ! -f "$PROVIDER_ROOT/.agentic-vim-managed" ]] && ((!FORCE)); then
   die "$PROVIDER_ROOT is not owned by agentic-vim; rerun with --force to back it up"
@@ -301,7 +300,8 @@ provider_is_current() {
     && cmp -s "$ROOT/provider/package.json" "$PROVIDER_ROOT/package.json" \
     && cmp -s "$ROOT/provider/package-lock.json" "$PROVIDER_ROOT/package-lock.json" \
     && [[ -x "$PROVIDER_ROOT/node_modules/.bin/codex" ]] \
-    && [[ -x "$PROVIDER_ROOT/node_modules/.bin/codex-acp" ]]
+    && [[ -x "$PROVIDER_ROOT/node_modules/.bin/codex-acp" ]] \
+    && [[ -x "$PROVIDER_ROOT/node_modules/.bin/pyright-langserver" ]]
 }
 
 if provider_is_current; then
@@ -315,6 +315,8 @@ else
     --prefix "$STAGED_PROVIDER" --no-audit --no-fund
   [[ -x "$STAGED_PROVIDER/node_modules/.bin/codex" ]] || die "Codex CLI installation failed"
   [[ -x "$STAGED_PROVIDER/node_modules/.bin/codex-acp" ]] || die "codex-acp installation failed"
+  [[ -x "$STAGED_PROVIDER/node_modules/.bin/pyright-langserver" ]] \
+    || die "Pyright language server installation failed"
   printf 'managed by agentic-vim\n' > "$STAGED_PROVIDER/.agentic-vim-managed"
   if [[ -e "$PROVIDER_ROOT" ]]; then
     if [[ -f "$PROVIDER_ROOT/.agentic-vim-managed" ]]; then
@@ -329,6 +331,7 @@ fi
 mkdir -p "$MANAGED_BIN"
 {
   printf '#!/bin/sh\n'
+  printf 'export NVIM_APPNAME=%q\n' "$APP_NAME"
   printf 'export VIMRUNTIME=%q\n' "$NVIM_INSTALL/share/nvim/runtime"
   printf 'exec %q "$@"\n' "$NVIM_INSTALL/bin/nvim"
 } > "$MANAGED_BIN/nvim"
@@ -345,6 +348,8 @@ write_node_wrapper "$MANAGED_BIN/codex" \
   "$PROVIDER_ROOT/node_modules/@openai/codex/bin/codex.js"
 write_node_wrapper "$MANAGED_BIN/codex-acp" \
   "$PROVIDER_ROOT/node_modules/@agentclientprotocol/codex-acp/dist/index.js"
+write_node_wrapper "$MANAGED_BIN/pyright-langserver" \
+  "$PROVIDER_ROOT/node_modules/pyright/langserver.index.js"
 "$MANAGED_BIN/codex" --version >/dev/null || die "Codex wrapper verification failed"
 
 pack_is_current() {
@@ -359,7 +364,7 @@ pack_is_current() {
     [[ "$(git -C "$plugin_dir" rev-parse HEAD 2>/dev/null)" == "$commit" ]] || return 1
     if [[ -n "$patch" ]]; then
       patch_hash=$(git -C "$plugin_dir" diff --cached --binary HEAD | sha256_stream)
-      [[ "$patch_hash" == "$AGENTIC_PATCH_SHA256" ]] || return 1
+      [[ "$patch_hash" == "$AGENTIC_PATCH_DIFF_SHA256" ]] || return 1
       [[ -z "$(git -C "$plugin_dir" diff --binary)" ]] || return 1
       [[ -z "$(git -C "$plugin_dir" ls-files --others --exclude-standard)" ]] || return 1
     elif [[ -n "$(git -C "$plugin_dir" status --porcelain)" ]]; then
@@ -379,10 +384,6 @@ pack_is_current() {
 if pack_is_current; then
   say "Pinned Neovim plugins are already current."
 else
-  if [[ -e "$PACK_ROOT" ]]; then
-    ((FORCE)) || die "$PACK_ROOT is not the expected managed plugin set; rerun with --force to back it up"
-    backup_target "$PACK_ROOT" "pack/agentic-vim"
-  fi
   STAGED_PACK="$TMP_DIR/pack"
   mkdir -p "$STAGED_PACK/start"
   while IFS='|' read -r name url commit patch; do
@@ -393,12 +394,12 @@ else
     git -C "$STAGED_PACK/start/$name" fetch -q --depth 1 origin "$commit"
     git -C "$STAGED_PACK/start/$name" checkout -q --detach FETCH_HEAD
     if [[ -n "$patch" ]]; then
-      [[ "$(sha256_file "$ROOT/$patch")" == "$AGENTIC_PATCH_SHA256" ]] \
+      [[ "$(sha256_file "$ROOT/$patch")" == "$AGENTIC_PATCH_FILE_SHA256" ]] \
         || die "Agent HUD patch checksum mismatch"
       git -C "$STAGED_PACK/start/$name" apply --check --index "$ROOT/$patch"
       git -C "$STAGED_PACK/start/$name" apply --index "$ROOT/$patch"
       [[ "$(git -C "$STAGED_PACK/start/$name" diff --cached --binary HEAD | sha256_stream)" \
-        == "$AGENTIC_PATCH_SHA256" ]] || die "Agent HUD patch verification failed"
+        == "$AGENTIC_PATCH_DIFF_SHA256" ]] || die "Agent HUD patch verification failed"
       [[ -z "$(git -C "$STAGED_PACK/start/$name" diff --binary)" ]] \
         || die "Agent HUD checkout contains unexpected unstaged changes"
       [[ -z "$(git -C "$STAGED_PACK/start/$name" ls-files --others --exclude-standard)" ]] \
@@ -406,33 +407,15 @@ else
     fi
   done < "$ROOT/nvim/plugins.lock"
   printf 'managed by agentic-vim\n' > "$STAGED_PACK/.agentic-vim-managed"
+  if [[ -e "$PACK_ROOT" ]]; then
+    backup_target "$PACK_ROOT" "pack/agentic-vim"
+  fi
   mkdir -p "$(dirname "$PACK_ROOT")"
   mv "$STAGED_PACK" "$PACK_ROOT"
 fi
 
 replace_with_symlink "$ROOT/nvim" "$NVIM_CONFIG" "config/nvim"
-replace_with_symlink "$MANAGED_BIN/nvim" "$BIN_HOME/nvim" "bin/nvim"
-replace_with_symlink "$NODE_INSTALL/bin/node" "$BIN_HOME/node" "bin/node"
-replace_with_symlink "$MANAGED_BIN/codex" "$BIN_HOME/codex" "bin/codex"
-replace_with_symlink "$MANAGED_BIN/codex-acp" "$BIN_HOME/codex-acp" "bin/codex-acp"
-replace_with_symlink "$TREE_SITTER_INSTALL" "$BIN_HOME/tree-sitter" "bin/tree-sitter"
-
-CODEX_CONFIG_DIR="${CODEX_HOME:-$HOME/.codex}"
-CODEX_CONFIG="$CODEX_CONFIG_DIR/config.toml"
-if [[ ! -e "$CODEX_CONFIG" ]]; then
-  mkdir -p "$CODEX_CONFIG_DIR"
-  cp "$ROOT/codex/config.toml" "$CODEX_CONFIG"
-  chmod 600 "$CODEX_CONFIG"
-  say "Installed portable Codex defaults at $CODEX_CONFIG"
-elif ! cmp -s "$ROOT/codex/config.toml" "$CODEX_CONFIG"; then
-  if ((FORCE)); then
-    backup_target "$CODEX_CONFIG" "codex/config.toml"
-    cp "$ROOT/codex/config.toml" "$CODEX_CONFIG"
-    chmod 600 "$CODEX_CONFIG"
-  else
-    say "Kept existing $CODEX_CONFIG (use --force to replace it with repository defaults)."
-  fi
-fi
+replace_with_symlink "$MANAGED_BIN/nvim" "$BIN_HOME/$LAUNCHER_NAME" "bin/$LAUNCHER_NAME"
 
 append_path_config() {
   local shell_file=$1 backup_label=$2
@@ -475,14 +458,14 @@ PATH="$BIN_HOME:$MANAGED_BIN:$NODE_INSTALL/bin:$PATH" \
   AGENTIC_VIM_PARSERS="$VERIFY_PARSERS" \
   AGENTIC_VIM_CHECK_SCRIPT="$ROOT/scripts/nvim-install-check.lua" \
   AGENTIC_VIM_CHECK_MARKER="$TMP_DIR/nvim-verified" \
-  "$MANAGED_BIN/nvim" --headless -i NONE \
+  "$BIN_HOME/$LAUNCHER_NAME" --headless -i NONE \
   '+lua dofile(vim.env.AGENTIC_VIM_CHECK_SCRIPT)' +qa
 [[ -f "$TMP_DIR/nvim-verified" ]] || die "Neovim verification did not complete"
 
 say ""
 say "Agentic Vim is installed."
 say "Next: $ROOT/scripts/setup-credentials.sh"
-say "Then restart your shell and run: nvim"
+say "Then restart your shell and run: $LAUNCHER_NAME"
 if [[ -n "$BACKUP_DIR" ]]; then
   say "Backups from this run: $BACKUP_DIR"
 fi

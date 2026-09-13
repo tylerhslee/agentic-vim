@@ -113,16 +113,21 @@ local function format_windows(windows, now)
   local parts = {}
   for _, window in ipairs(windows) do
     parts[#parts + 1] = string.format(
-      "%s %d%% left (reset %s)",
+      "%s: %d%% (reset %s)",
       duration_label(window.duration_mins),
       window.percent_left,
       reset_label(window.resets_at, now)
     )
   end
-  return table.concat(parts, " | ")
+  return table.concat(parts, "  |  ")
 end
 
 local function current_statusline_width()
+  -- A global statusline is drawn across the whole editor, so pane width would
+  -- make the quota text unnecessarily terse whenever a narrow pane is active.
+  if vim.o.laststatus == 3 then
+    return vim.o.columns
+  end
   local winid = tonumber(vim.g.statusline_winid)
   if winid and vim.api.nvim_win_is_valid(winid) then
     return vim.api.nvim_win_get_width(winid)
@@ -132,33 +137,31 @@ end
 
 local function format_compact(windows, now, include_resets)
   local quotas = {}
-  local resets = {}
   for _, window in ipairs(windows) do
-    quotas[#quotas + 1] = string.format(
-      "%s %d%%",
+    local quota = string.format(
+      "%s: %d%%",
       duration_label(window.duration_mins),
       window.percent_left
     )
-    resets[#resets + 1] = reset_label(window.resets_at, now)
+    if include_resets then
+      quota = quota .. " (reset " .. reset_label(window.resets_at, now) .. ")"
+    end
+    quotas[#quotas + 1] = quota
   end
-  local result = "Codex " .. table.concat(quotas, "/")
-  if include_resets then
-    result = result .. " left (reset " .. table.concat(resets, "/") .. ")"
-  end
-  return result
+  return "Codex  " .. table.concat(quotas, "  |  ")
 end
 
-function M.statusline()
+function M.statusline(width)
   if #state.windows == 0 then
     return ""
   end
-  local width = current_statusline_width()
+  width = width or current_statusline_width()
   if width < 55 then
     return format_compact(state.windows, os.time(), false)
   elseif width < 100 then
     return format_compact(state.windows, os.time(), true)
   end
-  return "Codex " .. format_windows(state.windows, os.time())
+  return "Codex  " .. format_windows(state.windows, os.time())
 end
 
 local function cancel_watchdog()
@@ -354,7 +357,7 @@ function M.start()
     params = {
       clientInfo = {
         name = "leeharin-neovim-usage",
-        title = "LeeHaRin Neovim Usage",
+        title = "Agentic Vim Usage",
         version = "1.0.0",
       },
       capabilities = { experimentalApi = true },
@@ -389,14 +392,6 @@ function M.setup(opts)
   config = vim.tbl_extend("force", config, opts or {})
   state.stopping = false
 
-  local original = vim.o.statusline
-  local usage = "%{v:lua.require('codex_usage').statusline()}"
-  if original == "" then
-    vim.o.statusline = "%<%f %h%m%r%=" .. usage .. "  %-14.(%l,%c%V%) %P"
-  elseif not original:find("codex_usage", 1, true) then
-    vim.o.statusline = original .. "%= " .. usage
-  end
-
   vim.api.nvim_create_user_command("CodexUsageRefresh", M.refresh, {
     desc = "Refresh the live ChatGPT Codex quota display",
     force = true,
@@ -405,7 +400,7 @@ function M.setup(opts)
     desc = "Codex: refresh live quota",
   })
 
-  local group = vim.api.nvim_create_augroup("LeeHaRinCodexUsage", { clear = true })
+  local group = vim.api.nvim_create_augroup("AgenticVimCodexUsage", { clear = true })
   vim.api.nvim_create_autocmd("VimLeavePre", {
     group = group,
     callback = M.stop,
