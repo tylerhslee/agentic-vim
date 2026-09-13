@@ -137,7 +137,7 @@ require("neo-tree").setup({
     git_status = { symbols = { unstaged = "!" } },
   },
   -- Render full lines without Neo-tree's truncating, right-aligned container.
-  -- Neovim can then wrap names and their trailing status into the fixed sidebar.
+  -- Long selected names remain readable through the filename marquee below.
   renderers = {
     directory = {
       { "indent" }, { "icon" }, { "current_filter" }, { "name" },
@@ -156,10 +156,9 @@ require("neo-tree").setup({
       event = "neo_tree_window_after_open",
       handler = function(args)
         local win = args.winid
-        vim.wo[win].wrap = true
-        vim.wo[win].linebreak = true
-        vim.wo[win].breakindent = true
-        vim.wo[win].breakindentopt = "shift:2"
+        vim.wo[win].wrap = false
+        vim.wo[win].linebreak = false
+        vim.wo[win].breakindent = false
       end,
     },
   },

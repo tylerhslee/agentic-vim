@@ -50,7 +50,7 @@ function M.name(config, node, state, remaining_width)
     return rendered
   end
 
-  if active_node_id ~= node_id then
+  if active_state ~= state or active_node_id ~= node_id then
     active_node_id = node_id
     frame = 0
     active_since = vim.uv.now()
@@ -63,6 +63,27 @@ function M.name(config, node, state, remaining_width)
 end
 
 function M.setup()
+  local group = vim.api.nvim_create_augroup("NeoTreeFilenameMarquee", { clear = true })
+  local selected_state, selected_id
+  -- Neo-tree saves cursor movement without rendering names again. Kick the
+  -- renderer when selection changes so an idle marquee can become active.
+  vim.api.nvim_create_autocmd({ "CursorMoved", "BufEnter", "WinEnter" }, {
+    group = group,
+    callback = function()
+      if vim.bo.filetype ~= "neo-tree" then
+        return
+      end
+      local state = require("neo-tree.sources.manager").get_state_for_window()
+      local node = state and state.tree and state.tree:get_node()
+      if not node or (selected_state == state and selected_id == node:get_id()) then
+        return
+      end
+      selected_state, selected_id = state, node:get_id()
+      active_state, active_node_id = nil, nil
+      frame = 0
+      require("neo-tree.ui.renderer").redraw(state)
+    end,
+  })
   local timer = assert(vim.uv.new_timer())
   timer:start(160, 160, vim.schedule_wrap(function()
     local state = active_state
@@ -81,7 +102,7 @@ function M.setup()
   end))
 
   vim.api.nvim_create_autocmd("VimLeavePre", {
-    group = vim.api.nvim_create_augroup("NeoTreeFilenameMarquee", { clear = true }),
+    group = group,
     once = true,
     callback = function()
       if not timer:is_closing() then

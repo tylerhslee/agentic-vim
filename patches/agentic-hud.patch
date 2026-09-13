@@ -1458,10 +1458,10 @@ index 149bf71..0ed0a60 100644
  
 diff --git a/lua/agentic/ui/session_hud.lua b/lua/agentic/ui/session_hud.lua
 new file mode 100644
-index 0000000..f9db652
+index 0000000..6784b73
 --- /dev/null
 +++ b/lua/agentic/ui/session_hud.lua
-@@ -0,0 +1,739 @@
+@@ -0,0 +1,755 @@
 +local BufHelpers = require("agentic.utils.buf_helpers")
 +local Logger = require("agentic.utils.logger")
 +
@@ -1489,7 +1489,7 @@ index 0000000..f9db652
 +--- @field _saved_windows? table<integer, table>
 +local SessionHud = {}
 +SessionHud.__index = SessionHud
-+SessionHud.preserves_chat_buffer = true
++SessionHud.previews_native_chat = true
 +
 +local STATUS_ICONS = {
 +    starting = "◌",
@@ -1770,7 +1770,7 @@ index 0000000..f9db652
 +    reset_preview = reset_preview
 +        or not vim.deep_equal(previous, self._selected)
 +    local sessions = require("agentic.session_registry").list()
-+    local list_lines, targets, preview_lines, preview_highlights =
++    local list_lines, targets =
 +        SessionHud.build_sections(sessions, self._selected)
 +    -- Keep the complete command help visible, with breathing room before the
 +    -- choices. Details remain in the normal status bar while the picker is open.
@@ -1789,11 +1789,27 @@ index 0000000..f9db652
 +        vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, list_lines)
 +    end)
 +
-+    -- Browsing the picker must not swap the visible chat to another session or
-+    -- a synthetic subagent preview. Only an explicit session activation does.
-+    self:_map_chat_tab(vim.api.nvim_win_get_buf(preview_winid))
-+    self._displayed_chat_bufnr = vim.api.nvim_win_get_buf(preview_winid)
-+    self._source.widget:render_header("chat")
++    -- Borrow the selected session's native buffer so its highlights, tool
++    -- output and streaming updates appear exactly as they do in normal chat.
++    -- The prompt and session placement stay unchanged until the picker closes.
++    local selected_session = self._source
++    for _, session in ipairs(sessions) do
++        if self._selected and session.session_key == self._selected.session_key then
++            selected_session = session
++            break
++        end
++    end
++    local chat_bufnr = selected_session.widget.buf_nrs.chat
++    if chat_bufnr and vim.api.nvim_buf_is_valid(chat_bufnr) then
++        if vim.api.nvim_win_get_buf(preview_winid) ~= chat_bufnr then
++            vim.api.nvim_win_set_buf(preview_winid, chat_bufnr)
++            vim.api.nvim_win_set_cursor(preview_winid,
++                { vim.api.nvim_buf_line_count(chat_bufnr), 0 })
++        end
++        self:_map_chat_tab(chat_bufnr)
++        self._displayed_chat_bufnr = chat_bufnr
++        selected_session.widget:render_header("chat")
++    end
 +    local target_line = 1
 +    for line, target in pairs(targets) do
 +        if
@@ -2203,10 +2219,10 @@ index 0000000..f9db652
 +return SessionHud
 diff --git a/lua/agentic/ui/session_hud.test.lua b/lua/agentic/ui/session_hud.test.lua
 new file mode 100644
-index 0000000..7a69595
+index 0000000..9ebdc3b
 --- /dev/null
 +++ b/lua/agentic/ui/session_hud.test.lua
-@@ -0,0 +1,447 @@
+@@ -0,0 +1,461 @@
 +--- @diagnostic disable: missing-fields, assign-type-mismatch
 +--- @diagnostic disable: invisible, param-type-mismatch, duplicate-set-field
 +local assert = require("tests.helpers.assert")
@@ -2506,7 +2522,7 @@ index 0000000..7a69595
 +        )
 +    end)
 +
-+    it("keeps the visible chat buffer while browsing and preserves the draft", function()
++    it("previews the highlighted native chat immediately and preserves the draft", function()
 +        local source = session(1, "idle")
 +        local other = session(2, "idle")
 +        local input = vim.api.nvim_get_current_win()
@@ -2516,6 +2532,10 @@ index 0000000..7a69595
 +        local other_chat = vim.api.nvim_create_buf(false, true)
 +        vim.api.nvim_buf_set_lines(source_chat, 0, -1, false, { "First chat" })
 +        vim.api.nvim_buf_set_lines(other_chat, 0, -1, false, { "Second chat" })
++        vim.bo[other_chat].filetype = "agentic-chat"
++        local ns = vim.api.nvim_create_namespace("session-preview-test")
++        local mark = vim.api.nvim_buf_set_extmark(other_chat, ns, 0, 0,
++            { end_col = 6, hl_group = "Title" })
 +        attach_widget(source, test_chat, input, source_chat)
 +        attach_widget(other, nil, nil, other_chat)
 +        registry_list_stub = spy.stub(require("agentic.session_registry"), "list")
@@ -2525,12 +2545,22 @@ index 0000000..7a69595
 +        assert.equal(7, vim.api.nvim_buf_line_count(open_hud._list_bufnr))
 +        vim.cmd("normal j")
 +        assert.equal(input, vim.api.nvim_get_current_win())
-+        assert.equal(source_chat, vim.api.nvim_win_get_buf(test_chat))
++        assert.equal(other_chat, vim.api.nvim_win_get_buf(test_chat))
++        assert.equal("agentic-chat", vim.bo[vim.api.nvim_win_get_buf(test_chat)].filetype)
++        assert.same({ 0, 0 }, vim.api.nvim_buf_get_extmark_by_id(other_chat, ns, mark, {}))
++        vim.api.nvim_buf_set_lines(other_chat, -1, -1, false, { "Live update" })
++        open_hud:_render()
++        assert.equal(other_chat, vim.api.nvim_win_get_buf(test_chat))
++        assert.same({ "Second chat", "Live update" },
++            vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(test_chat), 0, -1, false))
 +        vim.cmd("normal k")
 +        assert.equal(source_chat, vim.api.nvim_win_get_buf(test_chat))
++        vim.cmd("normal j")
 +        open_hud:close()
++        assert.equal(source_chat, vim.api.nvim_win_get_buf(test_chat))
 +        assert.equal(draft, vim.api.nvim_win_get_buf(input))
 +        assert.same({ "Unsent draft" }, vim.api.nvim_buf_get_lines(draft, 0, -1, false))
++        vim.api.nvim_buf_delete(other_chat, { force = true })
 +    end)
 +
 +    it("uses only Tab to switch between HUD panes", function()

@@ -21,7 +21,7 @@ package.preload['agentic.config'] = function()
   return { provider = 'test', acp_providers = { test = { command = vim.v.progpath } } }
 end
 package.preload['agentic.ui.session_hud'] = function()
-  return { preserves_chat_buffer = true }
+  return { previews_native_chat = true }
 end
 package.preload['nvim-treesitter'] = function()
   return { install = function()

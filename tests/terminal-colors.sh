@@ -46,6 +46,8 @@ local ok, err = pcall(function()
   assert(vim.o.termguicolors == (vim.env.EXPECT_RGB == "1"), "Theme reload changed terminal color mode")
   assert(vim.api.nvim_get_hl(0, { name = "Normal" }).ctermbg == 235, "Reload lost fallback")
   dofile(vim.env.AGENTIC_CHEATSHEET_TEST)
+  dofile(vim.env.AGENTIC_SESSION_PREVIEW_TEST)
+  dofile(vim.env.AGENTIC_MARQUEE_TEST)
 end)
 if vim.env.AGENTIC_COLOR_RESULT then
   vim.fn.writefile({ ok and "verified" or tostring(err) }, vim.env.AGENTIC_COLOR_RESULT)
@@ -53,6 +55,8 @@ end
 if not ok then print(err); vim.cmd("cquit 1") end
 LUA
 export AGENTIC_CHEATSHEET_TEST="$ROOT/tests/cheatsheet.lua"
+export AGENTIC_SESSION_PREVIEW_TEST="$ROOT/tests/session-preview.lua"
+export AGENTIC_MARQUEE_TEST="$ROOT/tests/neotree-marquee.lua"
 for mode in notermguicolors termguicolors; do
   rgb=0
   [[ "$mode" != termguicolors ]] || rgb=1

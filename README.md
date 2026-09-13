@@ -213,10 +213,9 @@ Inside Neo-tree, use `j`/`k` to move, `l` or `Enter` to open, `h` to collapse,
 and ignored items, and `q` to close. Those items are visible by default. Press
 `?` there for the complete command list. The source tabs at the top switch
 among files, open buffers, and Git status; `<` and `>` move between them.
-The tree stays 34 columns wide and wraps long filenames onto indented continuation
-lines. When a long filename is selected, it pauses briefly, scrolls horizontally,
-and loops so the whole name remains readable. `!` means unstaged changes; `?`
-means an untracked file. `j`/`k` still move between entries, including wrapped entries.
+The tree stays 34 columns wide and never wraps entries. When a long filename is
+selected, it pauses briefly, scrolls horizontally, and loops so the whole name
+remains readable. `!` means unstaged changes; `?` means an untracked file.
 
 In Neo-tree's **Buffers** source, the entries are files currently loaded in
 Neovim, grouped by directory. `#7` is buffer number 7, `[+]` means the buffer
@@ -234,13 +233,15 @@ on the right show diagnostics or Git status.
 | `o` | Open the sorting menu |
 | `Tab` | Mark or unmark an entry for multi-item file operations |
 
-The session picker replaces only the prompt area and leaves the visible chat
-buffer untouched while you browse. If chat is hidden, opening the picker
-restores it first. Use `j`/`k` to select a session, `Enter` to open it, `e` or
+The session picker replaces the prompt area. Moving the highlight with `j`/`k`
+immediately previews that session's actual chat in the chat pane, with its normal
+colors and live updates. If chat is hidden, opening the picker restores it first.
+Use `Enter` to open the highlighted session's prompt, `e` or
 `R` to rename it, and `D` to destroy it after confirmation.
 `Tab` switches between the list and transcript; `q`, `Esc`, or `Space s` closes
 the picker and opens the highlighted session's prompt. Each session keeps its
-own unsent draft. Closing while inspecting a subagent opens its parent session.
+own unsent draft. Subagent rows preview their parent session's chat; closing
+while inspecting a subagent opens its parent session.
 
 The normal chat buffer continues to follow incoming messages. The picker has no
 prompt input. Nested subagents remain visible as a status tree, but browsing

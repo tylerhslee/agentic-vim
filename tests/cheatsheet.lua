@@ -22,6 +22,16 @@ local function snapshot()
   return result
 end
 
+-- Read-only help must open even when Neovim cannot create a swap file.
+local old_directory = vim.o.directory
+vim.o.directory = vim.fn.tempname() .. "/missing"
+local opened, open_error = pcall(sheet.open)
+vim.o.directory = old_directory
+assert(opened, "Cheatsheet required a writable swap directory: " .. tostring(open_error))
+assert(vim.api.nvim_buf_line_count(0) > 1, "Cheatsheet help buffer was empty")
+assert(vim.bo.swapfile == false, "Cheatsheet help buffer enabled swap")
+sheet.toggle()
+
 widget:show({ focus_prompt = false })
 settle()
 vim.api.nvim_set_current_win(widget.win_nrs.input)
@@ -30,6 +40,7 @@ for _ = 1, 12 do
   press("<F2>")
   local float = vim.api.nvim_get_current_win()
   assert(vim.api.nvim_win_get_config(float).relative == "editor", "F2 did not open a float")
+  assert(vim.api.nvim_buf_line_count(0) > 1, "Normal-mode F2 opened an empty cheatsheet")
   assert(vim.deep_equal(before, snapshot()), "Opening F2 moved chat or input")
   sheet.open()
   assert(vim.api.nvim_get_current_win() == float, "Open duplicated the cheatsheet")
@@ -57,6 +68,7 @@ vim.api.nvim_set_current_win(widget.win_nrs.input)
 press("i<F2>")
 float = vim.api.nvim_get_current_win()
 assert(vim.api.nvim_win_get_config(float).relative == "editor", "Insert-mode F2 did not open help")
+assert(vim.api.nvim_buf_line_count(0) > 1, "Insert-mode F2 opened an empty cheatsheet")
 press("<F2>")
 assert(vim.api.nvim_get_current_win() == widget.win_nrs.input, "Insert-mode F2 lost input focus")
 assert(vim.deep_equal(before, snapshot()), "Insert-mode toggle changed chat geometry")

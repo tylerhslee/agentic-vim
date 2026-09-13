@@ -28,13 +28,16 @@ function M.open()
     return
   end
   local buf = vim.fn.bufadd(path)
+  -- This is a read-only help buffer; loading it must not depend on being able
+  -- to create a swap file beside the isolated configuration or in state.
+  vim.bo[buf].buftype = "help"
+  vim.bo[buf].swapfile = false
   vim.fn.bufload(buf)
   -- A float leaves Agentic's split sizes and input position untouched.
   local config = geometry()
   config.style = "minimal"
   config.border = "rounded"
   vim.api.nvim_open_win(buf, true, config)
-  vim.bo.buftype = "help"
   vim.bo.bufhidden = "hide"
   vim.bo.buflisted = false
   vim.bo.modifiable = false

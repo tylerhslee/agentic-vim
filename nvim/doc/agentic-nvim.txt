@@ -72,7 +72,7 @@ SESSION PICKER ~
 
   j/k shows the selected session's actual chat buffer in the window above the
   picker, preserving its normal rendering and live state. Enter opens that
-  session's prompt. Subagents use a read-only activity preview. Every session
+  session's prompt. Subagent rows preview their parent's chat. Every session
   keeps its own unsent draft. Closing on a subagent opens its parent prompt.
 
 AGENTIC PROMPT COMPLETION ~

@@ -8,8 +8,8 @@ local ok, err = xpcall(function()
     require(name)
   end
   assert(
-    require("agentic.ui.session_hud").preserves_chat_buffer == true,
-    "Installed Agent HUD does not preserve the visible chat buffer"
+    require("agentic.ui.session_hud").previews_native_chat == true,
+    "Installed Agent HUD does not preview the highlighted native chat buffer"
   )
   local config = require("agentic.config")
   local provider = config.acp_providers[config.provider].command
