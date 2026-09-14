@@ -12,6 +12,8 @@ vim.fn.mkdir(directory, "p")
 local filename = "abcdefghijklmnopqrstuvwxyz-0123456789-long-filename.txt"
 vim.fn.writefile({}, directory .. "/" .. filename)
 vim.fn.writefile({}, directory .. "/short.txt")
+vim.fn.mkdir(directory .. "/subfolder", "p")
+vim.fn.writefile({}, directory .. "/subfolder/nested.txt")
 local command = require("neo-tree.command")
 local renderer = require("neo-tree.ui.renderer")
 local ok, err = pcall(function()
@@ -31,6 +33,26 @@ local ok, err = pcall(function()
     local row = vim.api.nvim_win_get_cursor(state.winid)[1]
     return vim.api.nvim_buf_get_lines(state.bufnr, row - 1, row, false)[1]
   end
+  select(filename)
+  local starting_row = vim.api.nvim_win_get_cursor(state.winid)[1]
+  vim.cmd("normal! j")
+  assert(vim.wait(500, function()
+    return vim.api.nvim_win_get_cursor(state.winid)[1] == starting_row + 1
+  end, 20), "Marquee redraw cancelled normal j navigation")
+  vim.cmd("normal! k")
+  assert(vim.wait(500, function()
+    return vim.api.nvim_win_get_cursor(state.winid)[1] == starting_row
+  end, 20), "Marquee redraw cancelled normal k navigation")
+
+  select("subfolder")
+  vim.cmd("normal l")
+  vim.wait(250, function() return false end)
+  assert((function()
+    local folder = state.tree:get_node(directory .. "/subfolder")
+    return folder and folder:is_expanded()
+      and state.tree:get_node(directory .. "/subfolder/nested.txt") ~= nil
+  end)(), "Marquee redraw interfered with opening a subfolder")
+
   select("short.txt")
   renderer.redraw(state)
   select(filename)
@@ -45,6 +67,20 @@ local ok, err = pcall(function()
   initial = line()
   assert(vim.wait(2200, function() return line() ~= initial end, 40),
     "Marquee did not restart after selecting a short filename")
+
+  -- Closing while the timer is active must discard the old window state.
+  command.execute({ action = "close", source = "filesystem" })
+  vim.wait(250, function() return false end)
+  command.execute({ action = "focus", source = "filesystem", dir = directory })
+  state = require("neo-tree.sources.manager").get_state("filesystem")
+  assert(vim.wait(2000, function()
+    return state.winid and vim.api.nvim_win_is_valid(state.winid)
+      and state.tree and state.tree:get_node(directory .. "/" .. filename) ~= nil
+  end), "Fixture tree did not reopen after an active marquee was closed")
+  select(filename)
+  initial = line()
+  assert(vim.wait(2200, function() return line() ~= initial end, 40),
+    "Marquee did not restart after closing and reopening Neo-tree")
 end)
 command.execute({ action = "close", source = "filesystem" })
 vim.fn.delete(directory, "rf")

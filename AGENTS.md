@@ -33,21 +33,40 @@ repository in a verified state.
 - `nvim/lua/` contains the editor, UI, LSP, usage, and routine-job modules.
 - `nvim/doc/agentic-nvim.txt` is the in-editor help and keymap reference.
 - `nvim/plugins.lock` pins native Neovim plugins.
-- `patches/agentic-hud.patch` is the maintained Agentic.nvim customization.
+- `patches/` contains checksum-pinned customizations to pinned plugin bases.
 - `provider/package.json` and `provider/package-lock.json` pin provider tools.
 - `scripts/install.sh` owns installation, upgrades, isolation, and platform
   behavior; `scripts/setup-credentials.sh` owns the authentication wizard.
 - `scripts/nvim-install-check.lua` is the installed-runtime health check.
 - `tests/` contains repository-level shell test entry points.
+- `docs/architecture/` contains the harness contract and upstream strategy.
 - `README.md` is the user-facing installation and operation contract.
 
 ## Operating model
 
-Use an orchestrator-worker model for work that benefits from parallelism. The
-orchestrator remains accountable for the whole result: understanding the
-request, defining acceptance criteria, assigning work, integrating changes,
-resolving conflicts, running final verification, and reporting the outcome.
-Delegation transfers execution, not ownership of correctness.
+Use an orchestrator-worker model for non-trivial work. The primary agent is the
+orchestrator and remains accountable for the whole result: understanding the
+request, defining acceptance criteria, planning, assigning work, integrating
+changes, resolving conflicts, commissioning independent review, running final
+verification, and reporting one cohesive outcome. Delegation transfers
+execution, not ownership of correctness or product decisions.
+
+### Execution plan
+
+Inspect the repository before planning. For substantial work, maintain a
+capability map with these fields:
+
+| ID | Capability | Includes | Excludes | Interfaces | Dependencies | Exclusive write ownership | Read dependencies | Specialty | Acceptance criteria | Verification | Integration seams | Status |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+
+Optimize the map for mutually exclusive and collectively exhaustive (MECE)
+capability ownership, not for a timeline. Dependencies only determine runnable
+waves. Each row must describe an objectively testable deliverable with explicit
+semantic and filesystem boundaries. Reject a plan before delegation when
+capabilities are missing or duplicated, write paths overlap, shared ownership
+is ambiguous, interfaces are incomplete, or a row cannot be verified
+independently. Keep shared and cross-cutting files with the orchestrator or one
+designated integration owner. Combine scopes that cannot be separated cleanly.
 
 ### When to delegate
 
@@ -61,18 +80,19 @@ worker tasks include:
 - reproduction of a bug on a separate, read-only path.
 
 Do not delegate a trivial task, a single tightly coupled edit, or work whose
-result the orchestrator cannot independently validate. Prefer at most three
-concurrent workers. The orchestrator should continue useful integration or
-analysis work while workers run. Workers must not create further workers unless
-their assignment explicitly permits it.
+result the orchestrator cannot independently validate. Use as much concurrency
+as the available harness safely supports when assignments are truly
+independent; otherwise use ordered waves. The orchestrator should continue
+useful integration or analysis work while workers run. Workers must not create
+further workers unless their assignment explicitly permits it.
 
 ### Worker assignment contract
 
 Every assignment must state:
 
 1. the objective and expected deliverable;
-2. relevant context and known constraints;
-3. exact file or subsystem ownership;
+2. dependencies already satisfied, relevant context, and known constraints;
+3. exact file or subsystem ownership and prohibited scope expansion;
 4. acceptance criteria and commands to run;
 5. whether edits are allowed or the task is read-only; and
 6. the required return format: findings, files changed, verification, and any
@@ -83,6 +103,12 @@ unrelated user changes, and never revert another worker's work. A worker that
 finds necessary out-of-scope work reports it instead of expanding scope. For
 shared or cross-cutting files, assign a single owner or keep integration with
 the orchestrator.
+
+When the execution harness supports isolation, writing workers use isolated
+workspaces created from one frozen baseline. Otherwise workers remain read-only
+and return findings or patch proposals. Only the integration phase may modify
+the canonical working tree. Detect canonical drift before applying results and
+never automatically stash, reset, or discard user changes.
 
 ### Integration protocol
 
@@ -96,10 +122,31 @@ the orchestrator.
   without inspecting it.
 - Integrate incrementally. Reconcile behavior, naming, docs, tests, lockfiles,
   and generated artifacts before running the repository-wide checks.
+- Review the combined result adversarially: try to disprove that it satisfies
+  the request. Look for missed requirements, incompatible interfaces,
+  duplicated behavior, inconsistent error handling, security or state bugs,
+  portability regressions, stale artifacts, and accidental scope growth.
 - If worker results disagree, reproduce the evidence and choose based on the
   repository contract and observed behavior, not consensus.
 - The orchestrator alone presents the final answer and clearly distinguishes
   verified facts from assumptions or checks that could not be run.
+
+### Specialist code review
+
+After integrating material code changes, assign a fresh read-only reviewer for
+each programming language or technical domain materially changed. The reviewer
+must be fluent in that language and ecosystem and must inspect the original
+request, acceptance criteria, integrated diff, applicable instructions, and
+test output. Ask the reviewer to search for defects rather than confirm prior
+claims.
+
+Review findings must be ordered by severity and include a file and line,
+concrete failure mode, supporting evidence, and the smallest reasonable fix.
+Avoid style-only findings unless they affect correctness, clarity,
+maintainability, or established conventions. The orchestrator adjudicates every
+finding, applies or delegates corrections, and reruns affected checks. A
+separate reviewer may be skipped for tiny or documentation-only changes, but
+the orchestrator must still inspect the final diff.
 
 ## Implementation workflow
 
@@ -149,9 +196,8 @@ when relevant, and continue.
 - Do not hand-edit `provider/package-lock.json` independently of
   `provider/package.json`; regenerate it with the project's package manager.
 - Keep `nvim/plugins.lock` deterministic and review every changed revision.
-- When changing the Agentic.nvim derivative, keep
-  `patches/agentic-hud.patch`, its pinned base, its checksum in the installer,
-  and the third-party notices mutually consistent.
+- When changing a plugin derivative, keep its patch, pinned base, lockfile
+  checksums, and third-party notices mutually consistent.
 - Do not introduce an unpinned network download into installation paths.
 
 ## Verification ladder

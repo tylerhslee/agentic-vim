@@ -4,6 +4,28 @@ local frame = 0
 local active_state
 local active_node_id
 local active_since = 0
+local selected_state
+local selected_id
+local timer
+
+local function stop_active(state)
+  if state and active_state ~= state then
+    return
+  end
+  active_state = nil
+  active_node_id = nil
+  active_since = 0
+  frame = 0
+end
+
+local function reset(state)
+  if state and active_state ~= state and selected_state ~= state then
+    return
+  end
+  stop_active()
+  selected_state = nil
+  selected_id = nil
+end
 
 local function characters(text)
   local result = {}
@@ -43,9 +65,7 @@ function M.name(config, node, state, remaining_width)
 
   if not is_selected or vim.fn.strdisplaywidth(rendered.text) <= width then
     if is_selected then
-      active_state = nil
-      active_node_id = nil
-      frame = 0
+      stop_active(state)
     end
     return rendered
   end
@@ -64,7 +84,11 @@ end
 
 function M.setup()
   local group = vim.api.nvim_create_augroup("NeoTreeFilenameMarquee", { clear = true })
-  local selected_state, selected_id
+  if timer and not timer:is_closing() then
+    timer:stop()
+    timer:close()
+  end
+  reset()
   -- Neo-tree saves cursor movement without rendering names again. Kick the
   -- renderer when selection changes so an idle marquee can become active.
   vim.api.nvim_create_autocmd({ "CursorMoved", "BufEnter", "WinEnter" }, {
@@ -74,20 +98,48 @@ function M.setup()
         return
       end
       local state = require("neo-tree.sources.manager").get_state_for_window()
-      local node = state and state.tree and state.tree:get_node()
+      if not state or not state.tree then
+        return
+      end
+      -- After a close/reopen, NuiTree can briefly retain the deleted buffer
+      -- internally. Passing the known cursor row avoids its stale window lookup.
+      local row = vim.api.nvim_win_get_cursor(0)[1]
+      local node = state.tree:get_node(row)
       if not node or (selected_state == state and selected_id == node:get_id()) then
         return
       end
       selected_state, selected_id = state, node:get_id()
       active_state, active_node_id = nil, nil
       frame = 0
-      require("neo-tree.ui.renderer").redraw(state)
+      -- Let Neo-tree's own CursorMoved handler save the new position before
+      -- rendering. A synchronous redraw restores the previous saved row,
+      -- effectively cancelling normal j/k movement and racing node expansion.
+      local node_id = selected_id
+      vim.schedule(function()
+        if selected_state ~= state or selected_id ~= node_id
+            or not state.winid or not vim.api.nvim_win_is_valid(state.winid) then
+          return
+        end
+        local bufnr = vim.api.nvim_win_get_buf(state.winid)
+        if bufnr ~= state.bufnr or not vim.api.nvim_buf_is_valid(bufnr)
+            or vim.bo[bufnr].filetype ~= "neo-tree" then
+          return
+        end
+        require("neo-tree.ui.renderer").redraw(state)
+      end)
     end,
   })
-  local timer = assert(vim.uv.new_timer())
+  timer = assert(vim.uv.new_timer())
   timer:start(160, 160, vim.schedule_wrap(function()
     local state = active_state
     if not state or not state.winid or not vim.api.nvim_win_is_valid(state.winid) then
+      reset(state)
+      return
+    end
+    local bufnr = vim.api.nvim_win_get_buf(state.winid)
+    if bufnr ~= state.bufnr or not vim.api.nvim_buf_is_valid(bufnr)
+        or vim.bo[bufnr].filetype ~= "neo-tree" then
+      reset(state)
       return
     end
     if vim.api.nvim_get_current_win() ~= state.winid then
@@ -109,8 +161,14 @@ function M.setup()
         timer:stop()
         timer:close()
       end
+      timer = nil
+      reset()
     end,
   })
+end
+
+function M.stop(state)
+  reset(state)
 end
 
 M._window = marquee_window

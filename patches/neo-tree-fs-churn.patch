@@ -1,0 +1,130 @@
+diff --git a/lua/neo-tree/sources/filesystem/lib/fs_scan.lua b/lua/neo-tree/sources/filesystem/lib/fs_scan.lua
+index 00be7e1..4d3238c 100644
+--- a/lua/neo-tree/sources/filesystem/lib/fs_scan.lua
++++ b/lua/neo-tree/sources/filesystem/lib/fs_scan.lua
+@@ -272,16 +272,31 @@ local function is_permission_error(err)
+   return vim.startswith(err, "EPERM") or vim.startswith(err, "EACCES")
+ end
+ 
++---@param err string libuv error
++---@return boolean is_disappearance_error
++local function is_disappearance_error(err)
++  -- Filesystem watchers can schedule a refresh immediately before a path is
++  -- deleted or replaced with a non-directory. This is normal filesystem churn.
++  return vim.startswith(err, "ENOENT") or vim.startswith(err, "ENOTDIR")
++end
++
++---@param err string libuv error
++---@param path string?
++local function log_scan_error(err, path)
++  local write = (is_permission_error(err) or is_disappearance_error(err)) and log.debug or log.error
++  if path then
++    write(path, ": ", err)
++  else
++    write(err)
++  end
++end
++
+ local function get_children_sync(path)
+   local children = {}
+   local dir, err = uv.fs_opendir(path, nil, ENTRIES_BATCH_SIZE)
+   if not dir then
+     ---@cast err -nil
+-    if is_permission_error(err) then
+-      log.debug(err)
+-    else
+-      log.error(err)
+-    end
++    log_scan_error(err)
+     return children
+   end
+   repeat
+@@ -304,11 +319,7 @@ local function get_children_async(path, callback)
+   local children = {}
+   uv.fs_opendir(path, function(err, dir)
+     if err then
+-      if is_permission_error(err) then
+-        log.debug(err)
+-      else
+-        log.error(err)
+-      end
++      log_scan_error(err)
+       callback(children)
+       return
+     end
+@@ -414,16 +425,37 @@ local function async_scan(context, path)
+     job_complete(context)
+   end)
+ 
++  local function complete_directory(ctx, current_dir, dir)
++    if dir then
++      uv.fs_closedir(dir)
++    end
++    on_directory_loaded(ctx, current_dir)
++    ctx.directories_scanned = ctx.directories_scanned + 1
++    if ctx.directories_scanned == ctx.directories_to_scan then
++      ctx.on_exit()
++    end
++  end
++
+   -- from https://github.com/nvim-lua/plenary.nvim/blob/master/lua/plenary/scandir.lua
+   local function read_dir(current_dir, ctx)
++    local completed = false
++    local function finish(dir)
++      if completed then
++        return
++      end
++      completed = true
++      complete_directory(ctx, current_dir, dir)
++    end
+     uv.fs_opendir(current_dir, function(openerr, dir)
+       if openerr then
+-        log.error(current_dir, ": ", openerr)
++        log_scan_error(openerr, current_dir)
++        finish()
+         return
+       end
+       local function on_fs_readdir(readerr, entries)
+         if readerr then
+-          log.error(current_dir, ": ", readerr)
++          log_scan_error(readerr, current_dir)
++          finish(dir)
+           return
+         end
+         if entries then
+@@ -447,12 +479,7 @@ local function async_scan(context, path)
+           uv.fs_readdir(dir, on_fs_readdir)
+           return
+         end
+-        uv.fs_closedir(dir)
+-        on_directory_loaded(ctx, current_dir)
+-        ctx.directories_scanned = ctx.directories_scanned + 1
+-        if ctx.directories_scanned == #ctx.paths_to_load then
+-          ctx.on_exit()
+-        end
++        finish(dir)
+       end
+ 
+       uv.fs_readdir(dir, on_fs_readdir)
+@@ -479,8 +506,11 @@ local function sync_scan(context, path_to_scan)
+     local dir, err = uv.fs_opendir(path_to_scan, nil, ENTRIES_BATCH_SIZE)
+     if dir then
+       repeat
+-        local stats = uv.fs_readdir(dir)
++        local stats, read_err = uv.fs_readdir(dir)
+         if not stats then
++          if read_err then
++            log_scan_error(read_err, path_to_scan)
++          end
+           break
+         end
+ 
+@@ -500,7 +530,7 @@ local function sync_scan(context, path_to_scan)
+       until not more
+       uv.fs_closedir(dir)
+     else
+-      log.error("Error opening dir:", err)
++      log_scan_error(err, path_to_scan)
+     end
+ 
+     local paths_to_load = context.paths_to_load

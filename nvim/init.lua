@@ -67,6 +67,12 @@ vim.opt.linespace = 2
 
 vim.keymap.set("i", "jj", "<Esc>", { desc = "Exit insert mode" })
 vim.keymap.set("t", "<Esc>", [[<C-\><C-n>]], { desc = "Enter Terminal-Normal mode" })
+vim.cmd("packadd nvim-autopairs")
+require("nvim-autopairs").setup({
+  disable_filetype = { "TelescopePrompt", "spectre_panel", "snacks_picker_input", "AgenticInput" },
+})
+local terminal_pane = require("terminal_pane")
+terminal_pane.setup({ height = 15 })
 
 -- Move between windows with one Ctrl chord. These Normal-mode mappings also
 -- work after entering Terminal-Normal mode, without stealing shell shortcuts.
@@ -131,6 +137,8 @@ local tree_width = 34
 local neotree_marquee = require("neotree_marquee")
 require("neo-tree").setup({
   close_if_last_window = true,
+  -- Keep file opens out of scratch panes, including the Agentic session picker.
+  open_files_do_not_replace_types = { "terminal", "Trouble", "qf", "edgy", "nofile" },
   popup_border_style = "rounded",
   default_component_configs = {
     name = { right_padding = 2 },
@@ -159,6 +167,12 @@ require("neo-tree").setup({
         vim.wo[win].wrap = false
         vim.wo[win].linebreak = false
         vim.wo[win].breakindent = false
+      end,
+    },
+    {
+      event = "neo_tree_window_before_close",
+      handler = function()
+        neotree_marquee.stop()
       end,
     },
   },
@@ -415,7 +429,12 @@ end, {
 
 vim.keymap.set("c", "<CR>", function()
   local command = vim.trim(vim.fn.getcmdline())
-  if vim.fn.getcmdtype() == ":" and (command == "wq" or command == "wq!") then
+  local command_type = vim.fn.getcmdtype()
+  local terminal_command = terminal_pane.command_line(command, command_type)
+  if terminal_command then
+    return terminal_command
+  end
+  if command_type == ":" and (command == "wq" or command == "wq!") then
     local bang = command == "wq!" and "!" or ""
     return "<C-u>ConfirmWqAll" .. bang .. "<CR>"
   end

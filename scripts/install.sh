@@ -6,8 +6,6 @@ NVIM_VERSION="0.12.5"
 NODE_VERSION="22.22.2"
 NERD_FONT_VERSION="3.5.1"
 TREE_SITTER_VERSION="0.27.0"
-AGENTIC_PATCH_FILE_SHA256="e3be9b1b304e615593965766de5e7185fedb8d9c727b3dabcada505079781349"
-AGENTIC_PATCH_DIFF_SHA256="56496103109ac4ea0293bff4590aefa6b1dc4aa105c0d81244ce5ce4b0e4ec0c"
 NERD_FONT_SHA256="04d5e8f903693f9dd13e16f867e994834e681eb3c72c0d337a770dcda09010cf"
 PARSERS="bash css html javascript json lua markdown markdown_inline python toml tsx typescript yaml"
 
@@ -75,6 +73,33 @@ sha256_stream() {
   else
     shasum -a 256 | awk '{print $1}'
   fi
+}
+
+validate_plugin_lock() {
+  local name url commit patch patch_file_sha256 applied_diff_sha256
+  [[ -s "$ROOT/nvim/plugins.lock" \
+    && "$(tail -c 1 "$ROOT/nvim/plugins.lock" | wc -l)" -eq 1 ]] \
+    || die "plugin lock must be nonempty and end with a newline"
+  awk -F '|' '
+    /^#/ || NF == 0 { next }
+    NF != 6 { exit 1 }
+    $1 !~ /^[A-Za-z0-9._-]+$/ || seen[$1]++ { exit 1 }
+    ($4 == "") != ($5 == "") || ($4 == "") != ($6 == "") { exit 1 }
+  ' "$ROOT/nvim/plugins.lock" || die "invalid plugin lock schema"
+
+  while IFS='|' read -r name url commit patch patch_file_sha256 applied_diff_sha256; do
+    [[ -z "$name" || "$name" == \#* ]] && continue
+    [[ "$url" == https://*.git ]] || die "invalid repository URL for $name"
+    [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || die "invalid pinned commit for $name"
+    [[ -z "$patch" ]] && continue
+    [[ "$patch" == patches/*.patch && "$patch" != *..* && -f "$ROOT/$patch" ]] \
+      || die "unsafe or missing patch for $name"
+    [[ "$patch_file_sha256" =~ ^[0-9a-f]{64}$ \
+      && "$applied_diff_sha256" =~ ^[0-9a-f]{64}$ ]] \
+      || die "invalid patch hashes for $name"
+    [[ "$(sha256_file "$ROOT/$patch")" == "$patch_file_sha256" ]] \
+      || die "patch checksum mismatch for $name"
+  done < "$ROOT/nvim/plugins.lock"
 }
 
 ensure_backup_dir() {
@@ -181,6 +206,7 @@ preflight_link() {
 }
 
 platform_assets
+validate_plugin_lock
 NVIM_INSTALL="$TOOLS_ROOT/$NVIM_DIR"
 NODE_INSTALL="$TOOLS_ROOT/$NODE_DIR"
 TREE_SITTER_INSTALL="$TOOLS_ROOT/tree-sitter-v$TREE_SITTER_VERSION"
@@ -188,7 +214,7 @@ TREE_SITTER_INSTALL="$TOOLS_ROOT/tree-sitter-v$TREE_SITTER_VERSION"
 if ((DRY_RUN)); then
   say "Would install Neovim $NVIM_VERSION and Node.js $NODE_VERSION for $(uname -s) $(uname -m)."
   say "Would install JetBrainsMono Nerd Font $NERD_FONT_VERSION for the current user."
-  say "Would install pinned plugins from nvim/plugins.lock and apply the Agent HUD patch."
+  say "Would install pinned plugins from nvim/plugins.lock and apply their verified patches."
   say "Would install the pinned Codex CLI, codex-acp, and Tree-sitter CLI."
   say "Would link $NVIM_CONFIG to $ROOT/nvim without changing ~/.config/nvim."
   say "Would install the isolated Agentic Vim launcher at $BIN_HOME/$LAUNCHER_NAME."
@@ -353,18 +379,20 @@ write_node_wrapper "$MANAGED_BIN/pyright-langserver" \
 "$MANAGED_BIN/codex" --version >/dev/null || die "Codex wrapper verification failed"
 
 pack_is_current() {
-  local name url commit patch plugin_dir patch_hash expected_hash actual_hash
+  local name url commit patch patch_file_sha256 applied_diff_sha256
+  local plugin_dir patch_hash expected_hash actual_hash
   local -a expected_names=()
   [[ -f "$PACK_ROOT/.agentic-vim-managed" ]] || return 1
-  while IFS='|' read -r name url commit patch; do
+  while IFS='|' read -r name url commit patch patch_file_sha256 applied_diff_sha256; do
     [[ -z "$name" || "$name" == \#* ]] && continue
     expected_names+=("$name")
     plugin_dir="$PACK_ROOT/start/$name"
     [[ -d "$plugin_dir/.git" ]] || return 1
+    [[ "$(git -C "$plugin_dir" remote get-url origin 2>/dev/null)" == "$url" ]] || return 1
     [[ "$(git -C "$plugin_dir" rev-parse HEAD 2>/dev/null)" == "$commit" ]] || return 1
     if [[ -n "$patch" ]]; then
       patch_hash=$(git -C "$plugin_dir" diff --cached --binary HEAD | sha256_stream)
-      [[ "$patch_hash" == "$AGENTIC_PATCH_DIFF_SHA256" ]] || return 1
+      [[ "$patch_hash" == "$applied_diff_sha256" ]] || return 1
       [[ -z "$(git -C "$plugin_dir" diff --binary)" ]] || return 1
       [[ -z "$(git -C "$plugin_dir" ls-files --others --exclude-standard)" ]] || return 1
     elif [[ -n "$(git -C "$plugin_dir" status --porcelain)" ]]; then
@@ -386,7 +414,7 @@ if pack_is_current; then
 else
   STAGED_PACK="$TMP_DIR/pack"
   mkdir -p "$STAGED_PACK/start"
-  while IFS='|' read -r name url commit patch; do
+  while IFS='|' read -r name url commit patch patch_file_sha256 applied_diff_sha256; do
     [[ -z "$name" || "$name" == \#* ]] && continue
     say "Installing $name at ${commit:0:12}..."
     git init -q "$STAGED_PACK/start/$name"
@@ -394,16 +422,16 @@ else
     git -C "$STAGED_PACK/start/$name" fetch -q --depth 1 origin "$commit"
     git -C "$STAGED_PACK/start/$name" checkout -q --detach FETCH_HEAD
     if [[ -n "$patch" ]]; then
-      [[ "$(sha256_file "$ROOT/$patch")" == "$AGENTIC_PATCH_FILE_SHA256" ]] \
-        || die "Agent HUD patch checksum mismatch"
+      [[ "$(sha256_file "$ROOT/$patch")" == "$patch_file_sha256" ]] \
+        || die "patch checksum mismatch for $name"
       git -C "$STAGED_PACK/start/$name" apply --check --index "$ROOT/$patch"
       git -C "$STAGED_PACK/start/$name" apply --index "$ROOT/$patch"
       [[ "$(git -C "$STAGED_PACK/start/$name" diff --cached --binary HEAD | sha256_stream)" \
-        == "$AGENTIC_PATCH_DIFF_SHA256" ]] || die "Agent HUD patch verification failed"
+        == "$applied_diff_sha256" ]] || die "applied patch verification failed for $name"
       [[ -z "$(git -C "$STAGED_PACK/start/$name" diff --binary)" ]] \
-        || die "Agent HUD checkout contains unexpected unstaged changes"
+        || die "$name checkout contains unexpected unstaged changes"
       [[ -z "$(git -C "$STAGED_PACK/start/$name" ls-files --others --exclude-standard)" ]] \
-        || die "Agent HUD checkout contains unexpected files"
+        || die "$name checkout contains unexpected files"
     fi
   done < "$ROOT/nvim/plugins.lock"
   printf 'managed by agentic-vim\n' > "$STAGED_PACK/.agentic-vim-managed"

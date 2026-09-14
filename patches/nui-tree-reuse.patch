@@ -1,0 +1,71 @@
+diff --git a/lua/nui/tree/init.lua b/lua/nui/tree/init.lua
+index 999ce28..99192c2 100644
+--- a/lua/nui/tree/init.lua
++++ b/lua/nui/tree/init.lua
+@@ -87,6 +87,41 @@ local function initialize_nodes(tree, nodes, parent_node, get_node_id)
+   }
+ end
+ 
++-- set_nodes() accepts existing nodes (Neo-tree relies on this when replacing a
++-- grouped directory among otherwise unchanged siblings). Preserve the complete
++-- subtree before remove_node() detaches it from the current id map.
++---@param tree NuiTree
++---@param nodes NuiTree.Node[]
++local function snapshot_reused_subtrees(tree, nodes)
++  local snapshots = {}
++  local function snapshot(node)
++    if node._tree ~= tree then
++      return
++    end
++
++    local children = {}
++    for _, child_id in ipairs(node._child_ids or {}) do
++      local child = tree.nodes.by_id[child_id]
++      if child then
++        children[#children + 1] = child
++        snapshot(child)
++      end
++    end
++    snapshots[node] = children
++  end
++  for _, node in ipairs(nodes) do
++    snapshot(node)
++  end
++  return snapshots
++end
++
++local function restore_reused_subtrees(snapshots)
++  for node, children in pairs(snapshots) do
++    node._child_ids = nil
++    node.__children = #children > 0 and children or nil
++  end
++end
++
+ ---@class NuiTree.Node
+ ---@field _id string
+ ---@field _depth integer
+@@ -607,6 +642,8 @@ end
+ ---@param nodes NuiTree.Node[]
+ ---@param parent_id? string parent node's id
+ function Tree:set_nodes(nodes, parent_id)
++  local reused_subtrees = snapshot_reused_subtrees(self, nodes)
++
+   if not parent_id then
+     -- detach the old nodes before dropping them so a stale reference cannot poke
+     -- the tree (mirrors remove_node); self.nodes is nil on the first call from init()
+@@ -615,6 +652,7 @@ function Tree:set_nodes(nodes, parent_id)
+         remove_node(self, node_id)
+       end
+     end
++    restore_reused_subtrees(reused_subtrees)
+     self.nodes = { by_id = {}, root_ids = {} }
+     self:_add_nodes(nodes)
+     self:_link()
+@@ -645,6 +683,7 @@ function Tree:set_nodes(nodes, parent_id)
+     parent_node._child_ids = nil
+   end
+ 
++  restore_reused_subtrees(reused_subtrees)
+   local new_nodes = initialize_nodes(self, nodes, parent_node, self._.get_node_id)
+   merge_by_id(self.nodes.by_id, new_nodes.by_id)
+   parent_node._child_ids = new_nodes.root_ids

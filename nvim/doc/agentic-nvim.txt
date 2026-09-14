@@ -1,95 +1,163 @@
-Agentic NVIM cheatsheet                              *agentic-nvim-cheatsheet*
+Agentic NVIM: start here                             *agentic-nvim-cheatsheet*
 
-F2 or Space F1 (Normal mode) opens this sheet. Either shortcut closes it too.
-The sheet floats above the editor without resizing chat; toggle from any pane.
-q / Esc also closes it. Use / to search, n for next match.
-F1 keeps Neovim's built-in help. Command fallback: :AgenticCheatsheet
+YOU CANNOT GET STUCK ~
+  F2                      Close or reopen this cheatsheet from anywhere
+  Esc                     Stop typing and return to Normal mode
+  u                       Undo the last change
 
-Space is the global leader: press Space, release, then the remaining keys.
-Comma bindings work inside Agentic. Shortcuts below use Normal mode unless
-their context says otherwise. Esc or jj leaves Insert mode.
+Vim has modes. This is the one idea you need:
+  Normal mode             Keys perform actions (this is Vim's home mode)
+  Insert mode             Keys type text (the bottom says INSERT)
 
-EVERYDAY EDITING ~
-  :w                      Save current file
-  :wq                     Confirm saving all modified files and quitting
-  :q                      Close current window (refuses unsaved changes)
-  i / a                   Insert before / after cursor
+Press i to start typing. Press Esc when you are done. If a shortcut does
+nothing, press Esc once and try it again. Arrow keys and the mouse work too.
+
+YOUR FIRST FILE ~
+  1. Close this sheet with F2.
+  2. Press Space, then Shift-e to open the project tree on the left.
+  3. Move with the arrow keys (or j/k) and press Enter to open a file.
+  4. Press i, type your changes, then press Esc.
+  5. Type :w and press Enter to save.
+  6. Type :wq and press Enter when you are ready to leave Agentic Vim.
+
+`:wq` asks before saving every changed file and quitting. Choose Cancel if
+you are unsure. `:q` closes only the current pane and refuses unsaved changes.
+
+ASK THE AGENT ~
+  Space a a               Open or close Agentic chat
+  type your request       The cursor starts in the prompt
+  Enter or Ctrl-s         Send the request
+  Shift-Tab               Change whether tool actions need approval
+  Space a c               Add the current file to the agent's context
+
+Example: press Esc, then Space a a, and type "Explain this project to me."
+Inside chat, press Esc before using a Space shortcut. F2 works there too.
+
+HOW SHORTCUTS ARE WRITTEN ~
+`Space a a` means press Space, release it, then press a, then a. Do not type
+the words shown here. Space shortcuts work in Normal mode. Agentic also has
+shorter comma shortcuts, used only while you are inside an Agentic pane.
+
+MOVING AND EDITING ~
+  Arrow keys or h/j/k/l   Move left / down / up / right
+  w / b                   Move forward / backward by one word
+  0 / $                   Move to start / end of line
+  gg / G                  Move to first / last line
+  Ctrl-o / Ctrl-i         Go back / forward after jumping to another location
+  i / a                   Type before / after the cursor
+  o / O                   Add a new line below / above and start typing
+  x                       Delete the character under the cursor
+  dd                      Cut the current line
+  yy                      Copy the current line
+  p                       Paste after the cursor
   u / Ctrl-r              Undo / redo
-  v / V                   Select characters / lines
-  yy / dd / p             Copy line / cut line / paste after cursor
-  /text / n / N           Search / next match / previous match
-  gg / G                  First / last line
-  Ctrl-h/j/k/l            Focus left / below / above / right window
-  Ctrl-w =                Equalize window sizes
-  :split / :vsplit        Horizontal / vertical split
-  :terminal               Open a shell in the current window
-  Esc (terminal)          Enter Terminal-Normal mode; i resumes shell input
+  v / V                   Select characters / whole lines; move to extend
+  y / d                   Copy / cut the selection
+  Esc or jj               Leave Insert mode; Esc also cancels a selection
 
-FILES AND PROJECT TREE ~
-  Space e / Space E       Toggle tree / focus current file in tree
-  j / k                   Next / previous entry
-  l or Enter / h          Open / collapse
-  Backspace               Move up a directory
-  / / H                   Search tree / toggle hidden and ignored items
-  < / >                   Previous / next source (Files, Buffers, Git)
-  ? / q                   Tree help / close tree
-  Buffers: d or bd        Close buffer, keeping its file (protects unsaved work)
-  Buffers: S / s / t      Open in horizontal split / vertical split / tab
-  Buffers: P              Toggle preview
+FINDING TEXT ~
+  /word then Enter        Search forward for word
+  n / N                   Go to next / previous match
+  *                       Search for the word under the cursor
+  :nohl then Enter        Clear search highlighting
 
-AGENTIC CHAT ~
-  Space aa                Toggle chat
-  Space ac                Add current file or visual selection as context
-  Space an / Space ar     New session / restore a provider session
-  Space al                Rotate chat layout
-  Space ax                Stop generation
-  Space aq                Close chat and widen editor
-  Enter / Ctrl-s          Submit from Agentic prompt
-  Shift-Tab               Choose approval mode inside Agentic
-  Space m / ,m            Select model (editor / Agentic)
+FILES AND THE PROJECT TREE ~
+  Space e                 Toggle the project tree
+  Space E                 Focus the current file in the tree
+  j / k                   Select the next / previous entry
+  Enter or l              Open a file or expand a folder
+  h / Backspace           Collapse a folder / move up one folder
+  /                       Search the displayed tree
+  H                       Show or hide hidden and ignored files
+  < / >                   Switch among Files, Buffers, and Git
+  ? / q                   Show tree help / close the tree
+
+In the tree's Buffers view, `[+]` means unsaved. Press d or bd to close a
+buffer without deleting its file; Neovim refuses if it has unsaved changes.
+Use S / s / t to open it in a horizontal split / vertical split / tab, and P
+to toggle its preview.
+
+SAVING, CLOSING, AND COMMANDS ~
+  :w then Enter           Save the current file
+  :q then Enter           Close the current pane (refuses unsaved changes)
+  :wq then Enter          Confirm save-all and quit Agentic Vim
+  :qa then Enter          Quit only if nothing anywhere is unsaved
+
+Commands begin with : in Normal mode. Press Esc to cancel one. Avoid adding !
+unless you deliberately want to force an action and possibly discard changes.
+
+WINDOWS ~
+  Ctrl-h/j/k/l            Focus the pane left / below / above / right
+  Ctrl-w =                Make panes equal in size
+  :split / :vsplit        Split the current pane horizontally / vertically
+
+MORE AGENTIC CHAT ~
+  Space a n               Start a new session
+  Space a r               Restore a provider session
+  Space a l               Rotate the chat layout
+  Space a x               Stop the current response
+  Space a q               Close chat and widen the editor
+  Space m / ,m            Select model (from editor / from Agentic)
   Space l / ,l            Select provider
   Space t / ,t            Select thought level
   Space o / ,o            Open Agentic options
+  Space s / ,s            Open the session picker
   Space ] / ,]            Next session
   Space [ / ,[            Previous session
-  Space D / ,D            Destroy current session
-  Space au                Refresh Codex quota
-  Space aj                Open Routine Jobs pane
+  Space D / ,D            Destroy the current session (asks first)
+  Space a u               Refresh the Codex quota display
+  Space a j               Open the Routine Jobs pane
 
-  The session name and chat icon live above the chat ("New session" until named).
-  The bottom status bar shows model,
-  thought level, approval mode, generation activity, and available Codex quota.
+The chat title is above the conversation. The bottom bar shows the model,
+thought level, approval mode, generation activity, and available Codex quota.
 
 SESSION PICKER ~
-  Space s / ,s            Replace prompt with session picker (editor / Agentic)
-  j / k                   Select session and preview its chat
-  Enter                   Open selected session
-  e / R                   Rename selected session
-  D                       Destroy selected session after confirmation
-  Tab                     Switch session list / transcript
-  G                       Resume following incoming messages
-  q / Esc / Space s       Close picker; keep the highlighted session
+Previews and selected sessions show the latest part of the conversation.
 
-  j/k shows the selected session's actual chat buffer in the window above the
-  picker, preserving its normal rendering and live state. Enter opens that
-  session's prompt. Subagent rows preview their parent's chat. Every session
-  keeps its own unsent draft. Closing on a subagent opens its parent prompt.
+  j / k                   Select a session and preview its conversation
+  Enter                   Open the selected session
+  e / R                   Rename the selected session
+  D                       Destroy the selected session after confirmation
+  Tab                     Switch between session list and transcript
+  G                       Follow new incoming messages again
+  q / Esc / Space s       Close the picker
 
 AGENTIC PROMPT COMPLETION ~
-  $ (first character)     Show available Codex skills
-  Tab / Enter             Accept the selected skill completion
+  $ as the first character Show available Codex skills
+  Tab / Enter             Accept the selected skill
 
-PYTHON CODE NAVIGATION (PYRIGHT) ~
-  gd / gD                 Definition / declaration (when supported)
-  K                       Documentation under cursor
+PYTHON / RUST CODE HELP ~
+Python: Pyright. Rust: rust-analyzer when installed and on PATH. Both use:
+  gd / gD                 Go to definition / declaration
+  K                       Show documentation for the item under the cursor
   grr / gri / grt         References / implementations / type definition
-  gO / gW                 File symbols / workspace symbols
-  Space rn / Space ca     Rename symbol / code actions
-  Space ci / Space co     Incoming / outgoing calls (when supported)
-  Ctrl-o / Ctrl-i         Back / forward through jump history
-  [d / ]d                 Previous / next diagnostic
-  Ctrl-Space (Insert)     Request completion
-  Tab / Shift-Tab         Next / previous visible completion (Insert)
-  Enter (Insert)          Accept visible completion
+  gO / gW                 Symbols in this file / across the project
+  Space r n               Rename a symbol
+  Space c a               Show available code actions
+  [d / ]d                 Previous / next problem
+  Ctrl-Space (Insert)     Show completion suggestions
+  Tab / Shift-Tab         Select next / previous visible suggestion
+  Enter (Insert)          Accept the visible suggestion
+
+AUTOMATIC PAIRS ~
+Parentheses, brackets, braces, and quotes close automatically while editing.
+Typing an existing closer moves over it; Backspace removes an empty pair.
+
+TERMINAL ~
+  :term / :terminal       Toggle one persistent 15-line shell across the bottom
+  :terminal {command}     Use Neovim's native terminal-command behavior
+  Esc                     Stop sending keys to the shell
+  i                       Resume typing into the shell
+  :q (Terminal-Normal)    Close the dedicated pane and terminate its shell
+
+Toggling hides the dedicated pane without stopping its shell. Toggling from a
+different tab moves the same shell to that tab. Hiding or closing it restores
+the preceding editor and Agentic pane layout.
+
+ABOUT THIS SHEET ~
+Press / to search it and n for the next result. Press q, Esc, F2, or Space F1
+to close it. F2 toggles it from any mode or pane; Space F1 needs Normal mode.
+F1 still opens Neovim's full built-in help. Command fallback:
+`:AgenticCheatsheet`.
 
  vim:tw=78:ts=8:noet:ft=help:norl:

@@ -14,7 +14,7 @@ export AGENTIC_VIM_CHECK_MARKER="$TEST_DIR/success"
 mkdir -p "$XDG_DATA_HOME/agentic-vim/bin"
 ln -s "$(command -v "$NVIM")" "$XDG_DATA_HOME/agentic-vim/bin/pyright-langserver"
 cat > "$TEST_DIR/init.lua" <<'LUA'
-for _, name in ipairs({ 'agentic', 'neo-tree', 'snacks', 'render-markdown', 'codex_usage', 'routine_jobs', 'lsp', 'statusbar' }) do
+for _, name in ipairs({ 'agentic', 'neo-tree', 'nvim-autopairs', 'snacks', 'render-markdown', 'codex_usage', 'routine_jobs', 'lsp', 'statusbar', 'terminal_pane' }) do
   package.preload[name] = function() return {} end
 end
 package.preload['agentic.config'] = function()

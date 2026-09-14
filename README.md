@@ -1,15 +1,25 @@
 # Agentic Vim
 
-An independent Neovim distribution centered on
-[Agentic.nvim](https://github.com/carlos-algms/agentic.nvim) and Codex. This is
-not an official Agentic.nvim or Neovim project and is not endorsed by either
-upstream project.
+An independent Neovim distribution evolving toward a provider-neutral,
+Neovim-owned orchestration harness on top of
+[Agentic.nvim](https://github.com/carlos-algms/agentic.nvim). This is not an
+official Agentic.nvim or Neovim project and is not endorsed by either upstream
+project.
 
 The repository captures the editor configuration, exact plugin revisions, a
 modified Agentic.nvim extension, and provider versions. Credentials, sessions,
 caches, and machine-local data are never committed. Agentic.nvim was created by
 Carlos Gomes and is used and modified under its MIT License; see
 [Third-party notices](THIRD_PARTY_NOTICES.md).
+
+Today, Agentic Vim provides isolated Neovim packaging and ordinary agent
+sessions; it can also display provider-originated subagent telemetry when a
+provider emits it. The planned harness will make Neovim own capability planning,
+portable worker sessions, workspace isolation, single-writer integration,
+adversarial review, and verification. Those planned features are not yet
+implemented. See the
+[orchestration architecture](docs/architecture/orchestration-harness.md) and
+[upstream strategy](docs/architecture/upstream-strategy.md).
 
 ## Fresh machine setup
 
@@ -83,8 +93,8 @@ control.
   `provider/package-lock.json`; Tree-sitter CLI 0.27.0 from its checksum-verified
   official release binary.
 - Every native Neovim plugin at the commit in `nvim/plugins.lock`.
-- The custom Agent HUD as `patches/agentic-hud.patch`, verified before and
-  after it is applied to the pinned Agentic.nvim base.
+- Maintained patches for the Agent HUD and filesystem-tree churn fixes, each
+  checksum-verified before and after application to its pinned plugin base.
 
 To update an existing clone, pull changes and rerun the installer. Re-running
 the same revision is idempotent.
@@ -93,7 +103,8 @@ the same revision is idempotent.
 
 Repository instructions live in `AGENTS.md`. Claude Code loads `CLAUDE.md`,
 which imports that canonical guide so Claude and other coding agents receive the
-same project boundaries, patch workflow, and verification commands. Run
+same capability-oriented orchestration, specialist review, project boundaries,
+patch workflow, and verification commands. Run
 `bash tests/agent-onboarding.sh` to check the onboarding contract without
 authentication or a billable agent request. After authenticating Claude Code,
 run `bash tests/agent-onboarding.sh --live` for an opt-in, read-only agent check;
@@ -163,11 +174,14 @@ configuration edits therefore take effect when Agentic Vim restarts. Changes to
 `nvim/plugins.lock`, plugin patches, or `provider/package-lock.json` require
 rerunning `bash scripts/install.sh` to update the installed dependencies.
 
-Python uses the installer-managed Pyright 1.1.414 server. Completion appears
-while typing identifiers: `Tab` / `Shift-Tab` select suggestions, `Enter`
-accepts, and `Ctrl-Space` requests completion. Use `gd` for definitions, `K`
-for documentation, `grr` for references, `gri` for implementations, `grt` for
-type definitions, `gO` for file symbols, and `gW` for workspace symbols.
+Python uses the installer-managed Pyright 1.1.414 server, while Rust uses
+rust-analyzer when it is installed and available on `PATH`. Agentic Vim chooses
+between them by filetype and gives both the same completion and navigation
+bindings. Python also triggers completion while typing identifiers: `Tab` /
+`Shift-Tab` select suggestions, `Enter` accepts, and `Ctrl-Space` requests
+completion. Use `gd` for definitions, `K` for documentation, `grr` for
+references, `gri` for implementations, `grt` for type definitions, `gO` for
+file symbols, and `gW` for workspace symbols.
 `Space rn` renames a symbol and `Space ca` opens code actions, when supported
 by the server. Files default to four-space indentation and word-boundary wrapping.
 
@@ -207,6 +221,17 @@ is inside Agentic.
 | `Enter` or `Ctrl-s` | Agentic prompt | Submit the prompt |
 | `jj` | Insert mode | Return to Normal mode |
 | `Esc` | Terminal mode | Enter Terminal-Normal mode to navigate terminal output like text |
+| `:term` / `:terminal` | Command line | Toggle one persistent 15-line terminal across the full bottom of the current tab |
+| `:q` | Dedicated terminal, Terminal-Normal mode | Close the pane and terminate its shell |
+
+Toggling the dedicated terminal off keeps its shell alive; toggling it from
+another tab moves that same shell there. Terminal commands with arguments, such
+as `:terminal git status`, retain Neovim's native behavior. Hiding or closing
+the terminal restores the preceding editor and Agentic pane layout.
+
+While editing, parentheses, brackets, braces, and quotes close automatically.
+Typing an existing closing character moves over it instead of inserting a
+duplicate, and Backspace removes an untouched empty pair together.
 
 Inside Neo-tree, use `j`/`k` to move, `l` or `Enter` to open, `h` to collapse,
 `Backspace` to move up, `/` to search the displayed tree, `H` to toggle hidden
@@ -235,7 +260,9 @@ on the right show diagnostics or Git status.
 
 The session picker replaces the prompt area. Moving the highlight with `j`/`k`
 immediately previews that session's actual chat in the chat pane, with its normal
-colors and live updates. If chat is hidden, opening the picker restores it first.
+colors and live updates, starting at the latest message. Selecting a session
+also scrolls its chat to the latest message. If chat is hidden, opening the
+picker restores it first.
 Use `Enter` to open the highlighted session's prompt, `e` or
 `R` to rename it, and `D` to destroy it after confirmation.
 `Tab` switches between the list and transcript; `q`, `Esc`, or `Space s` closes

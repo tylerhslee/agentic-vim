@@ -1458,10 +1458,10 @@ index 149bf71..0ed0a60 100644
  
 diff --git a/lua/agentic/ui/session_hud.lua b/lua/agentic/ui/session_hud.lua
 new file mode 100644
-index 0000000..6784b73
+index 0000000..a290cf5
 --- /dev/null
 +++ b/lua/agentic/ui/session_hud.lua
-@@ -0,0 +1,755 @@
+@@ -0,0 +1,774 @@
 +local BufHelpers = require("agentic.utils.buf_helpers")
 +local Logger = require("agentic.utils.logger")
 +
@@ -1577,6 +1577,23 @@ index 0000000..6784b73
 +    vim.bo[bufnr].filetype = filetype
 +    vim.bo[bufnr].modifiable = false
 +    return bufnr
++end
++
++local function scroll_to_latest(winid)
++    if BufHelpers.is_win_usable(winid) then
++        vim.api.nvim_win_call(winid, function()
++            vim.cmd("noautocmd normal! G$zb")
++        end)
++    end
++end
++
++local function show_selected_session(key)
++    local registry = require("agentic.session_registry")
++    registry.show_session(key)
++    local session = registry.get(key)
++    if session then
++        scroll_to_latest(session.widget.win_nrs.chat)
++    end
 +end
 +
 +--- @param sessions agentic.SessionManager[]
@@ -1803,8 +1820,10 @@ index 0000000..6784b73
 +    if chat_bufnr and vim.api.nvim_buf_is_valid(chat_bufnr) then
 +        if vim.api.nvim_win_get_buf(preview_winid) ~= chat_bufnr then
 +            vim.api.nvim_win_set_buf(preview_winid, chat_bufnr)
-+            vim.api.nvim_win_set_cursor(preview_winid,
-+                { vim.api.nvim_buf_line_count(chat_bufnr), 0 })
++            reset_preview = true
++        end
++        if reset_preview then
++            scroll_to_latest(preview_winid)
 +        end
 +        self:_map_chat_tab(chat_bufnr)
 +        self._displayed_chat_bufnr = chat_bufnr
@@ -1905,7 +1924,7 @@ index 0000000..6784b73
 +    end
 +    local key = target.session_key
 +    self:close()
-+    require("agentic.session_registry").show_session(key)
++    show_selected_session(key)
 +end
 +
 +-- User dismissal keeps the highlighted session; internal teardown only closes.
@@ -1919,7 +1938,7 @@ index 0000000..6784b73
 +    self:close()
 +    local registry = require("agentic.session_registry")
 +    if target and registry.get(target.session_key) then
-+        registry.show_session(target.session_key)
++        show_selected_session(target.session_key)
 +    end
 +end
 +

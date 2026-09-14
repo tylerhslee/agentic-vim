@@ -66,6 +66,16 @@ for mode in notermguicolors termguicolors; do
   printf 'PASS: %s palette, styles, links, and reload\n' "$mode"
 done
 
+export AGENTIC_TERMINAL_PANE_TEST="$ROOT/tests/terminal-pane.lua"
+export AGENTIC_NEOTREE_REFRESH_TEST="$ROOT/tests/neotree-refresh.lua"
+export AGENTIC_AUTOPAIRS_TEST="$ROOT/tests/autopairs.lua"
+"$NVIM" --headless -i NONE -u "$ROOT/nvim/init.lua" \
+  --cmd "set runtimepath^=$ROOT/nvim" \
+  '+lua dofile(vim.env.AGENTIC_AUTOPAIRS_TEST)' \
+  '+lua dofile(vim.env.AGENTIC_TERMINAL_PANE_TEST)' \
+  '+lua dofile(vim.env.AGENTIC_NEOTREE_REFRESH_TEST)' +qa
+printf 'PASS: automatic pairs, dedicated terminal lifecycle, and filesystem churn regressions\n'
+
 # A headless process never negotiates TUI color support. Exercise an actual
 # pseudo-terminal after startup, without requiring a particular terminal app.
 python3 - "$ROOT" <<'PY'

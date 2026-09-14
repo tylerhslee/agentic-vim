@@ -4,7 +4,7 @@ local ok, err = xpcall(function()
   assert(vim.v.errmsg == "", "Neovim startup failed: " .. vim.v.errmsg)
   assert(vim.fn.has("nvim-0.12") == 1, "Neovim 0.12 or newer is required")
   assert(vim.env.NVIM_APPNAME == "agentic-vim", "nvim launcher did not enable the isolated Agentic Vim app")
-  for _, name in ipairs({ "agentic", "neo-tree", "snacks", "render-markdown", "codex_usage", "routine_jobs", "lsp", "statusbar" }) do
+  for _, name in ipairs({ "agentic", "neo-tree", "nvim-autopairs", "snacks", "render-markdown", "codex_usage", "routine_jobs", "lsp", "statusbar", "terminal_pane" }) do
     require(name)
   end
   assert(
